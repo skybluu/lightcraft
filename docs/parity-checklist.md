@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (renamed from `parity.md`; Top gaps moved to gaps.md, shortcut notes to ui-parity.md) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (skybluu fork cache and zoom evidence) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -139,6 +139,13 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-VIEW-CLIPPING | Clipping indicators | P0 | ✅ | `cmd:view.clipping` | |
 | LR-VIEW-HISTOGRAM | Histogram | P0 | ✅ | `cmd:view.histogram`, `crates/ui-egui/src/panels/edit.rs` | no drag-to-adjust on the histogram |
 | LR-VIEW-HDR-DISPLAY | HDR display output | P2 | ⬜ | | |
+
+Fork verification (2026-10-11): `tool.zoom` adds the bottom-bar magnifying-glass tool and anchored
+horizontal press-drag zoom; Shift-drag also scrubs without selecting it. Click still toggles Fit /
+the chosen ratio; ordinary dragging pans with the tool off, and Space-drag pans with it on.
+The shared-budget full-source cache and qualified native neighbour prefetch reduced the measured
+Sony 60 MP / 100% revisit median from 3490 ms to 400 ms at an 8192 MiB budget. Cold loading and
+1536 MiB eviction remain costly. See [UI parity verification](ui-parity.md#fork-zoom-and-browsing-verification-2026-10-11).
 
 ## D. Search & filter (FILT)
 
@@ -776,5 +783,6 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Fork: documented magnifier and anchored horizontal scrub gestures; measured shared-budget full-source reuse and qualified neighbour prefetch on Windows / Sony 60 MP RAWs |
 | 2026-10-10 | minor | Renamed from `parity.md` (progress-docs standard); Top gaps moved to gaps.md (its duplicated items 1–2 from a bad merge resolved there), shortcut notes moved to ui-parity.md. Rows unchanged; a recount of the rows gives 81.1% of 517 in-scope rows (P0 98.0%, P1 95.1%, P2 46.9%), so the generated summary above is due a `cargo xtask parity --write` |
 | 2026-09-30 – 2026-10-10 | — | Rows added and updated with each feature (see `git log -- docs/parity.md docs/parity-checklist.md`) |

@@ -45,6 +45,15 @@ pub enum Gesture {
         start: (f32, f32),
         at: Pos2,
     },
+    /// Horizontal scrub zoom: hold the original image point at the press position.
+    ScrubZoom {
+        response: egui::Id,
+        anchor: Pos2,
+        point: egui::Vec2,
+        percent: f32,
+        area: Rect,
+        native: [usize; 2],
+    },
     /// Dragging component `comp` of `mask`: its pin (`handle` 0) or a linear gradient's start (1)
     /// or end (2).
     MaskHandle {
@@ -153,8 +162,60 @@ pub(crate) fn pan_image(app: &mut LightcraftApp, area: Rect, img: Rect, delta: e
     let _ = app.run("view.navigate", json!({"pan": pan}));
 }
 
+fn scrub_zoom(app: &mut LightcraftApp, ui: &egui::Ui, resp: &egui::Response, area: Rect, img: Rect, native: [usize; 2]) -> bool {
+    let active = matches!(app.gesture, Some(Gesture::ScrubZoom { response, .. }) if response == resp.id);
+    if active && !ui.input(|i| i.pointer.primary_down()) {
+        app.gesture = None;
+        return true;
+    }
+    let navigation_tool = app.ui.tool.is_empty() || app.ui.tool == "zoom";
+    let navigation_panel = !matches!(app.ui.right, RightPanel::Crop | RightPanel::Masking | RightPanel::Remove | RightPanel::RedEye);
+    let space = ui.input(|i| i.key_down(egui::Key::Space));
+    if !active
+        && navigation_tool
+        && navigation_panel
+        && !space
+        && (app.ui.tool == "zoom" || ui.input(|i| i.modifiers.shift))
+        && resp.drag_started_by(egui::PointerButton::Primary)
+        && let Some(anchor) = ui.input(|i| i.pointer.press_origin()).filter(|p| area.contains(*p))
+    {
+        app.gesture = Some(Gesture::ScrubZoom {
+            response: resp.id,
+            anchor,
+            point: (anchor - img.min) / img.size(),
+            percent: img.width() * ui.ctx().pixels_per_point() * 100.0 / native[0].max(1) as f32,
+            area,
+            native,
+        });
+    }
+    let Some(Gesture::ScrubZoom { response, anchor, point, percent, area: start_area, native: start_native }) = app.gesture.as_ref() else {
+        return false;
+    };
+    if *response != resp.id || *start_area != area || *start_native != native {
+        return false;
+    }
+    if let Some(pointer) = resp.interact_pointer_pos() {
+        let ppp = ui.ctx().pixels_per_point();
+        let aspect = img.width() / img.height().max(1.0);
+        let fit = fit_rect(area, aspect, Zoom::Fit, native, ppp, (0.5, 0.5));
+        let fit_pct = fit.width() * ppp * 100.0 / native[0].max(1) as f32;
+        let factor = ((pointer.x - anchor.x) / 200.0).clamp(-16.0, 16.0).exp2();
+        let pct = (*percent * factor).clamp(fit_pct.min(800.0), 800.0);
+        let zoom = if pct <= fit_pct { Zoom::Fit } else { Zoom::Percent(pct) };
+        let size = fit_rect(area, aspect, zoom, native, ppp, (0.5, 0.5)).size();
+        let offset = area.center() - *anchor;
+        let pan = bounded_pan(area, size, (point.x + offset.x / size.x.max(1.0), point.y + offset.y / size.y.max(1.0)));
+        let _ = app.run("view.navigate", json!({"zoom": zoom, "pan": pan}));
+        ui.ctx().request_repaint();
+    }
+    true
+}
+
 /// Native pinch (also modifier-wheel zoom) and two-finger scroll, scoped to this image view.
 pub(crate) fn navigate_gesture(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, area: Rect, img: Rect, native: [usize; 2]) -> bool {
+    if scrub_zoom(app, ui, resp, area, img, native) {
+        return true;
+    }
     if !resp.hovered() {
         return false;
     }
@@ -437,9 +498,13 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }),
         _ => None,
     };
-    // once this photo is on screen: prepare its neighbours in filmstrip order (source decoded and
-    // kept, view render cached) so stepping to them is instant
-    if !interacting && !app.renderer.is_pending(Slot::Main) && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id) {
+    // Once the foreground is ready, warm neighbouring views. At sharp zoom, also retain their
+    // native decoded sources when the memory budget can hold the foreground and both neighbours.
+    if !interacting
+        && !app.renderer.is_pending(Slot::Main)
+        && !app.renderer.is_pending(Slot::Region)
+        && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id)
+    {
         let ids = app.session.visible_cloned();
         if let Some(i) = ids.iter().position(|p| *p == id) {
             let next = ids.get(i + 1).copied();
@@ -453,7 +518,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 let nw =
                     app.ui.settings.prefetch_edge(nr.width().max(nr.height()) * ppp, output_px(&nf).into_iter().max().unwrap_or(1), texture_side);
                 let (w, h) = if na >= 1.0 { (nw, (nw as f32 / na) as usize) } else { ((nw as f32 * na) as usize, nw) };
-                if let Some(job) = app.session.loupe_job(nid, w.max(8), h.max(8), !crop_tool) {
+                if let Some(job) = app.session.prefetch_job(nid, w.max(8), h.max(8), !crop_tool, plan.window_edge.is_some()) {
                     app.renderer.prefetch(Slot::Prefetch(n as u8), job, PREFETCH_PRIORITY);
                 }
             }
@@ -1111,6 +1176,16 @@ fn general_cursor(app: &LightcraftApp, ui: &egui::Ui, resp: &egui::Response, img
     let cursor = match app.ui.tool.as_str() {
         "wbPicker" | "colorRange" | "pointColor" => egui::CursorIcon::Crosshair,
         tool if tool.starts_with("tat:") => egui::CursorIcon::ResizeVertical,
+        "zoom" if !ui.input(|i| i.key_down(egui::Key::Space)) => {
+            if matches!(app.gesture, Some(Gesture::ScrubZoom { .. })) {
+                egui::CursorIcon::ResizeHorizontal
+            } else if matches!(app.ui.zoom, Zoom::Fit) {
+                egui::CursorIcon::ZoomIn
+            } else {
+                egui::CursorIcon::ZoomOut
+            }
+        }
+        "" if ui.input(|i| i.modifiers.shift) => egui::CursorIcon::ResizeHorizontal,
         _ if img.width() > canvas.width() + 1.0 || img.height() > canvas.height() + 1.0 => {
             if resp.dragged() {
                 egui::CursorIcon::Grabbing
@@ -1118,7 +1193,7 @@ fn general_cursor(app: &LightcraftApp, ui: &egui::Ui, resp: &egui::Response, img
                 egui::CursorIcon::Grab
             }
         }
-        _ => return,
+        _ => egui::CursorIcon::ZoomIn,
     };
     ui.ctx().set_cursor_icon(cursor);
 }
@@ -1186,7 +1261,7 @@ fn general_interaction(
         app.ui.zoom = Zoom::Fit;
         app.ui.zoom_anim = true;
     }
-    if zoomed && resp.dragged() {
+    if zoomed && resp.dragged_by(egui::PointerButton::Primary) && (app.ui.tool != "zoom" || ui.input(|i| i.key_down(egui::Key::Space))) {
         pan_image(app, canvas, img, resp.drag_delta());
     }
     let _ = (native, aspect);

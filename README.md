@@ -285,9 +285,14 @@ lightcraft --control 7980 ~/Pictures/trip
   ~4 ms, a cold 2.5 MP loupe in ~30 ms, and a full-size export in ~0.3 s including a parallel JPEG encode.
   Without a GPU the same pipeline runs on all CPU cores, redoing only the stages a slider affects. Batch exports
   render several photos side by side, so one's decode and encode overlap another's render.
-- **Instant culling.** Opening a raw shows its embedded camera preview or cached render within ~0.1 s while the
-  full render follows (~0.2–0.5 s for 24 MP). The next and previous photos are prepared in the background, so stepping
-  through a shoot takes ~50 ms per photo.
+- **Budgeted RAW browsing.** Opening a RAW shows a quick preview while the sharp render follows. Decoded originals
+  are retained in a shared least-recently-used cache, protecting the foreground photo. At sharp zoom, adjacent
+  originals are prepared only when the budget fits the foreground, two neighbours and rendered previews.
+  For 60 MP Sony files, set Settings → Performance → Memory budget to 8192 MiB (or launch with
+  `LIGHTCRAFT_MEMORY_MB=8192` while the setting is Automatic); the default 1.5 GiB budget fits only one original.
+  An isolated Windows / RTX 5080 run at 100% with three Sony A7R IV RAWs measured a median revisit of 0.40 s
+  versus 3.49 s before this patch, with no repeated full RAW development. Cold loading still took 3.3 s;
+  prefetch needs idle time, and eviction or restarting makes a photo cold again.
 - **Background rendering.** A worker pool renders the loupe, before/after and every visible thumbnail off the UI
   thread: drafts during drags, full quality on release.
 - **Local-first.** No account, no cloud, no telemetry, no subscription. Your catalog is an append-only log of
@@ -420,6 +425,11 @@ environment.systemPackages = [ pkgs.lightcraft ];           # home-manager: home
 **Keyboard:** <kbd>G</kbd> grid · <kbd>D</kbd> detail · <kbd>E</kbd> edit · <kbd>C</kbd> crop · <kbd>M</kbd> masking ·
 <kbd>Shift</kbd>+<kbd>P</kbd> presets · <kbd>\\</kbd> original · <kbd>Y</kbd> before/after · <kbd>Z</kbd> zoom ·
 <kbd>J</kbd> clipping · <kbd>⌘Z</kbd> undo · <kbd>⌘/</kbd> all shortcuts.
+
+**Zoom:** the magnifying-glass button selects the Zoom tool. Click the photo to toggle Fit / the chosen ratio;
+press and drag right to zoom in, left to zoom out, anchored at the pressed image point. Shift-drag also scrubs
+without selecting the tool, as in Lightroom Classic. Turn the tool off for normal drag-to-pan, or hold Space
+while dragging with it selected. The percentage dropdown remains available.
 
 ## How it's built
 

@@ -1,5 +1,25 @@
 # What's new in LightCraft
 
+## 2026-10-11 (skybluu fork)
+
+### Full-resolution RAW browsing
+- Retain multiple decoded originals within the existing shared memory budget instead of a single full-resolution slot.
+  Reads refresh recency; the selected original is protected from late neighbour completions and budget reductions.
+  Decoder colour facts and denoised twins stay attached to their original.
+- At sharp zoom, prefetch adjacent native sources only if the foreground, two neighbours and rendered previews fit.
+  Fit browsing and low-memory configurations keep lightweight preview prefetching.
+- Three 60 MP Sony A7R IV RAWs at 100%, RTX 5080 / DX12, 8192 MiB budget: median revisits 3.49 s → 0.40 s;
+  full RAW developments over eight selections 9 → 3, with zero repeat developments on revisits. The first uncached
+  photo still took 3.3 s. With the default 1536 MiB budget, only one such original fits and switching remains cold.
+
+### Magnifying-glass and scrub zoom
+- The bottom-bar magnifying glass selects the Zoom tool (`tool.zoom`): click toggles Fit / the chosen ratio,
+  horizontal dragging right zooms in and left zooms out. The original pressed image point stays anchored.
+- Shift-drag also scrubs without selecting the tool, matching Lightroom Classic's documented gesture;
+  ordinary dragging still pans when the tool is off, and Space-drag pans with it selected.
+- Tested in the Windows app through real control-channel input: magnifier selection, both drag directions,
+  click Fit / 100%, Shift-drag and normal panning. The percentage selector is unchanged.
+
 ## 2026-10-10
 
 ### Activity stack

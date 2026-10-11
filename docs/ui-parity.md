@@ -1,6 +1,6 @@
 # UI parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (created; shortcut notes moved here from the checklist) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (skybluu fork RAW caching and scrub zoom) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 How LightCraft's interaction compares with Lightroom's: views, panels, tools and handles, modifier
 keys, shortcuts, zoom, context menus and feel. Rows for individual menu items and shortcuts live in
@@ -27,7 +27,7 @@ assessment and the notes that don't fit a row. Visual reference for agents: `pla
 | Crop, Upright, transform handles | handles, aspect lock, angle, overlays (O / ⇧O), guided Upright | ✅ all of them; overlay cycle on ⇧O | 85% | crop opacity of cut-out area (15.5) |
 | Masking tools | brush (A / B, flow, density, auto mask, pressure), linear / radial, range masks, AI masks, pins | brush, linear, radial, colour / luminance range, add / subtract / intersect / invert, masks panel, pins | 60% | brush live preview (#517 / #518), no pen pressure, no depth range, AI masks, Feather / Edge controls (15.5) |
 | Remove / heal | content-aware remove, heal, clone, visualize spots | heal, clone, auto source, visualize spots, red / pet eye | 65% | content-aware (patch synthesis) remove, generative remove, detect distractions |
-| Zoom and navigation | Fit / Fill / 1:1 / 2:1 … 11:1, Navigator, spacebar pan | Fit to 800%, pinch zoom, pan, Navigator-like | 60% | **original-pixel detail at 100% (preview capped at 2,560 px; P0 gap LR-VIEW-ZOOM)** |
+| Zoom and navigation | Fit / Fill / 1:1 / 2:1 … 11:1, Navigator, spacebar pan, Shift-drag scrub zoom | Fit to 800%, pinch zoom, pan, Navigator-like, magnifying-glass tool and anchored horizontal scrub; budgeted original reuse and native neighbour prefetch | 60% | first uncached RAW development and limited-budget eviction remain costly |
 | Library culling and metadata | ratings, flags, labels with keys, painter, keywording, metadata panel, filter bar | ratings / flags / labels and advance, keyword list and sets, keywording box, metadata fields, smart albums, filter bar | 85% | painter tool, quick collection, some Classic keys |
 | Shortcuts | Lightroom desktop and Classic keymaps | Lightroom-desktop keymap with Classic additions, editable | 85% | deliberate differences below; no Classic keymap layer |
 | Context menus | everywhere | 26 sites (grid, filmstrip, albums, folders, keywords, masks, presets…) | 70% | unaudited against Lightroom's menus item by item |
@@ -74,8 +74,27 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 - ⌘M / ⌘H / ⌘Q / ⌘W rely on the platform window defaults (unverified).
 
 
+## Fork zoom and browsing verification (2026-10-11)
+
+The bottom-bar magnifying glass selects `tool.zoom`. Click toggles Fit / the configured ratio;
+press-drag right zooms in and left zooms out, from the original displayed scale and around the
+original pressed image point. Shift-drag provides the same scrub without the tool, following
+[Adobe's Lightroom Classic zoom guide](https://jkost.com/blog/2020/07/zooming-in-lightroom-classic.html).
+Ordinary drag still pans when the tool is off; Space-drag pans with it selected. Colour pickers,
+targeted adjustments and crop / masking / remove gestures retain their normal interaction.
+Zoom stays between Fit and 800%; vertical movement doesn't change it, and release doesn't click-toggle.
+
+The native Windows / RTX 5080 app was exercised on three 9504 × 6336 Sony A7R IV RAWs, at 100%,
+with an 8192 MiB budget and 5 s between selections to allow prefetch. Eight selections, including
+five revisits: the revisit median fell from 3490 ms to 400 ms, full RAW development count from
+9 to 3, and the retained-original count rose from 1 to 3 (2.02 GiB of decoded pixels).
+All five revisits reused the native source. Cold loading remained 3328 ms. With 1536 MiB only
+one native source fit and revisits still decoded; increase the budget on a machine with enough RAM.
+These are scenario measurements, not a claim of Lightroom parity or instantaneous cold loading.
+
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Fork: shared-budget original cache and native neighbour prefetch; measured Sony RAW revisits; magnifier and Lightroom Classic-style scrub zoom, actual Windows input verification |
 | 2026-10-10 | major | Created: measured command and shortcut counts, assessment by area, estimates; moved the shortcut conflicts section here from the checklist |

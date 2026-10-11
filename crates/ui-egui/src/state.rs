@@ -213,9 +213,8 @@ impl AppSettings {
         stepped.min(native_long_edge.max(8)).min(ceiling)
     }
 
-    /// Long edge for warming a neighbouring photo: its loupe size but never above the preview
-    /// source level. A full-size decode would replace the open photo's single full-resolution
-    /// source in the cache, and nothing is gained by it.
+    /// Long edge of a neighbouring photo's rendered stand-in: preview-sized even when the
+    /// engine warms its native decoded source for a sharp zoom window.
     pub fn prefetch_edge(&self, wanted_px: f32, native_long_edge: usize, texture_side: usize) -> usize {
         self.loupe_edge(wanted_px, native_long_edge, texture_side).min(lightcraft_engine::SourceLevel::Preview.max_edge())
     }

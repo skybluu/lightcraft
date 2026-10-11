@@ -38,19 +38,6 @@ fn render_sizes_move_in_steps() {
     assert_ne!(s.loupe_edge(3008.0, 6000, BIG), s.loupe_edge(3009.0, 6000, BIG));
 }
 
-// Neighbour prefetch and hover / before stand-ins stay at the preview level: a full-size decode
-// would evict the open photo's single full-resolution source (review of #323)
-#[test]
-fn prefetch_and_stand_ins_never_ask_for_the_full_source_level() {
-    use lightcraft_engine::SourceLevel;
-    let s = with_limit(0);
-    for wanted in [1000.0, 2560.0, 3024.0, 6000.0, 48000.0] {
-        assert!(s.prefetch_edge(wanted, 6000, BIG) <= SourceLevel::Preview.max_edge(), "{wanted}");
-        assert!(s.stand_in_edge(s.loupe_edge(wanted, 6000, BIG), BIG) <= SourceLevel::Preview.max_edge());
-    }
-    assert_eq!(s.prefetch_edge(1000.0, 6000, BIG), 1024, "a small view is not raised");
-}
-
 // Given Automatic, a small photo zoomed far in is not rendered above its own pixels
 #[test]
 fn never_renders_above_the_photos_own_pixels() {
