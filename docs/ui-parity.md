@@ -1,6 +1,6 @@
 # UI parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (zoom row: Compare and Reference sharp at 1:1) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (budgeted native reuse, neighbour prefetch and scrub zoom; Compare/Reference retained) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 How LightCraft's interaction compares with Lightroom's: views, panels, tools and handles, modifier
 keys, shortcuts, zoom, context menus and feel. Rows for individual menu items and shortcuts live in
@@ -27,7 +27,7 @@ assessment and the notes that don't fit a row. Visual reference for agents: `pla
 | Crop, Upright, transform handles | handles, aspect lock, angle, overlays (O / ⇧O), guided Upright | ✅ all of them; overlay cycle on ⇧O | 85% | crop opacity of cut-out area (15.5) |
 | Masking tools | brush (A / B, flow, density, auto mask, pressure), linear / radial, range masks, AI masks, pins | brush, linear, radial, colour / luminance range, add / subtract / intersect / invert, masks panel, pins | 60% | brush live preview (#517 / #518), no pen pressure, no depth range, AI masks, Feather / Edge controls (15.5) |
 | Remove / heal | content-aware remove, heal, clone, visualize spots | heal, clone, auto source, visualize spots, red / pet eye | 65% | content-aware (patch synthesis) remove, generative remove, detect distractions |
-| Zoom and navigation | Fit / Fill / 1:1 / 2:1 … 11:1, Navigator, spacebar pan | Fit to 800%, pinch zoom, pan, Navigator-like | 60% | **original-pixel detail at 100% with a mask overlay or soft proofing** (no zoom window there; Detail, Before/After, Compare and Reference have them; P0 gap LR-VIEW-ZOOM) |
+| Zoom and navigation | Fit / Fill / 1:1 / 2:1 … 11:1, Navigator, spacebar pan, Shift-drag scrub | Fit to 800%, pinch and wheel zoom, pan, Navigator-like, magnifier and anchored scrub; byte-budgeted native reuse and qualified neighbour warming | 60% | cold decoding and low-budget eviction; original-pixel detail with soft proofing (no zoom window there; LR-VIEW-ZOOM) |
 | Library culling and metadata | ratings, flags, labels with keys, painter, keywording, metadata panel, filter bar | ratings / flags / labels and advance, keyword list and sets, keywording box, metadata fields, smart albums, filter bar | 85% | painter tool, quick collection, some Classic keys |
 | Shortcuts | Lightroom desktop and Classic keymaps | Lightroom-desktop keymap with Classic additions, editable | 85% | deliberate differences below; no Classic keymap layer |
 | Context menus | everywhere | 26 sites (grid, filmstrip, albums, folders, keywords, masks, presets…) | 70% | unaudited against Lightroom's menus item by item |
@@ -74,9 +74,55 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 - ⌘M / ⌘H / ⌘Q / ⌘W rely on the platform window defaults (unverified).
 
 
+## RAW browsing and scrub zoom verification (2026-10-11)
+
+The cache and input changes are ported onto upstream `76b5377868d912db69a777bda253a5b1b96b22bd`,
+not the older 0.6.0 release source. Current upstream still caps Detail at one decoded original
+and prefetches preview sources only; its two-source Compare/Reference cache is not a browsing cache.
+The port retains originals under the shared byte budget, preserves decoder facts and denoised twins,
+and protects the foreground while accepting late neighbour completions. Compare and Reference
+retain both native sources when they fit; leaving those views no longer discards reusable originals.
+
+`tool.zoom` selects the bottom-bar magnifier. Horizontal press-drag zoom holds the image point at
+the press position; right zooms in, left zooms out. Shift-drag works with no editing tool selected;
+ordinary dragging still pans, Space-drag temporarily pans with the magnifier selected, and click
+still toggles Fit / the chosen ratio. Crop, masking, remove and colour-picking gestures retain input.
+The current upstream wheel/pinch behavior and Before/After pane clipping are retained.
+
+Native Windows smoke used the same three Sony A7R IV 9504 × 6336 RAWs, NVIDIA RTX 5080 DX12,
+an 8192 MiB budget, 100% zoom and 5 seconds idle between selections. Fit browsing performed zero
+full decodes. At 1536 MiB only one original fit and all eight selections decoded; cold loading
+and limited-budget eviction remain expensive. This is not a Lightroom-parity or cold-load claim.
+
+| Current-main comparison, five revisits | Unmodified upstream | Ported fork |
+|---|---:|---:|
+| Median selection to settled native window | 2622 ms | 412 ms |
+| Full RAW developments on revisits | 5 | 0 |
+| Retained originals after the sequence | 1 | 3 |
+
+Compare and Reference smoke retained both native originals and performed zero additional full
+decodes during panning in each view. These measurements cover cached browsing after neighbour
+preparation, not uninterrupted rapid scrolling or uncached first loading. The first ported
+selection in this run took 7065 ms; cold performance is not improved by this patch.
+
+Verification: 21 engine media tests, 3 thumbnail/content-key tests, 11 zoom/input tests, 2 Compare
+interaction tests and 46 preview/window tests passed (1 profiling test ignored). Native Windows
+smoke covered Detail browsing, Fit, a 1536 MiB budget, Compare/Reference panning and magnifier,
+Shift-drag, ordinary pan and held-Space pan; the magnifier was visually inspected in the toolbar.
+Formatting, parity-reference validation, dependency layers and asset attribution checks passed.
+The prescribed `cargo xtask ci` stops at clippy with unchanged upstream findings:
+`crates/pipeline/src/spots.rs:250` (`chunks_exact_to_as_chunks`) and the Windows test-only unused
+`descriptor_copy` in `crates/catalog/src/lock.rs:140`. No unrelated lint suppressions were added.
+This is not a full-CI-green claim; the full workspace suite and WASM gate were not reached.
+Current upstream upgrades catalog format v6 to v7; the port was tested against a backed-up copy
+of a 148-photo catalog, leaving the original user library unmodified during verification.
+
+
+
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Ported shared-budget native caching and scrub zoom onto current upstream; retained Compare/Reference, wheel navigation and pane clipping |
 | 2026-10-11 | minor | Zoom row: Compare and Reference get zoom windows; what remains of LR-VIEW-ZOOM is overlays and soft proofing |
 | 2026-10-10 | major | Created: measured command and shortcut counts, assessment by area, estimates; moved the shortcut conflicts section here from the checklist |

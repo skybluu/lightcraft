@@ -375,14 +375,12 @@ fn draw_window(p: &egui::Painter, app: &LightcraftApp, pane: u8, id: PhotoId, lo
     p.image(tex.tex.id(), dst, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
 }
 
-/// Per frame, before the central view is shown: Compare and Reference keep two photos' originals
-/// decoded (their windows are cut from both); other views keep one and free the panes' windows.
+/// Free the panes' windows outside Compare and Reference. Decoded originals remain reusable
+/// across views while they fit the shared byte budget.
 pub fn prepare(app: &mut LightcraftApp) {
     if matches!(app.ui.view, ViewMode::Compare | ViewMode::Reference) {
-        app.session.media.set_full_capacity(WINDOW_PANES as usize);
         return;
     }
-    app.session.media.set_full_capacity(1);
     for i in 0..WINDOW_PANES {
         if app.compare_windows[i as usize].take().is_some() || app.renderer.textures.contains_key(&Slot::CompareRegion(i)) {
             app.renderer.release(Slot::CompareRegion(i));

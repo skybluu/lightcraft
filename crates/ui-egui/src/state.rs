@@ -55,6 +55,17 @@ pub enum Zoom {
     Percent(f32),
 }
 
+/// An in-progress horizontal scrub: keep the pressed image point at its screen position.
+#[derive(Clone, Copy, Debug)]
+pub struct ZoomScrub {
+    pub response: egui::Id,
+    pub anchor: egui::Pos2,
+    pub point: egui::Vec2,
+    pub percent: f32,
+    pub area: egui::Rect,
+    pub native: [usize; 2],
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BeforeAfter {
@@ -416,9 +427,9 @@ impl AppSettings {
         stepped.min(native_long_edge.max(8)).min(ceiling)
     }
 
-    /// Long edge for warming a neighbouring photo: its loupe size but never above the preview
-    /// source level. A full-size decode would replace the open photo's single full-resolution
-    /// source in the cache, and nothing is gained by it.
+    /// Rendered edge for warming a neighbouring photo: keep the view preview-sized. The
+    /// session independently qualifies native source warming against the shared byte budget
+    /// when a sharp zoom needs it.
     pub fn prefetch_edge(&self, wanted_px: f32, native_long_edge: usize, texture_side: usize) -> usize {
         self.loupe_edge(wanted_px, native_long_edge, texture_side).min(lightcraft_engine::SourceLevel::Preview.max_edge())
     }
@@ -651,7 +662,7 @@ pub struct UiState {
     /// the photo that applies to: not an edit, and forgotten on moving to another photo or quitting.
     #[serde(skip)]
     pub grading_hidden: Option<(lightcraft_catalog::PhotoId, [bool; 3])>,
-    /// Active on-canvas tool: "", "brush", "linear", "radial", "wbPicker", "straighten", "remove".
+    /// Active on-canvas tool: "", "zoom", "brush", "linear", "radial", "wbPicker", "straighten", "remove".
     pub tool: String,
     pub brush_size: f32,
     pub brush_feather: f32,
@@ -1138,6 +1149,14 @@ impl Default for UiState {
 }
 
 impl UiState {
+    /// Scrub only with navigation tools; Space reserves the drag for panning.
+    pub fn zoom_scrub_allowed(&self, shift: bool, space: bool) -> bool {
+        (self.tool.is_empty() || self.tool == "zoom")
+            && !matches!(self.right, RightPanel::Crop | RightPanel::Masking | RightPanel::Remove | RightPanel::RedEye)
+            && !space
+            && (self.tool == "zoom" || shift)
+    }
+
     /// Which colour grading wheels (shadows, midtones, highlights) are hidden for viewing `photo`.
     pub fn grading_hidden_for(&self, photo: lightcraft_catalog::PhotoId) -> [bool; 3] {
         match self.grading_hidden {

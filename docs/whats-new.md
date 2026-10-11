@@ -2,6 +2,19 @@
 
 ## 2026-10-11
 
+### Full-resolution RAW browsing and scrub zoom
+- Decoded originals share the existing byte-budgeted LRU rather than a one-photo Detail / two-photo
+  Compare count cap. Revisiting an original still held reuses it, including its decoder metadata and
+  denoised twin. The foreground original is protected from a late neighbour completion.
+- At sharp zoom, neighbour prefetch can prepare native sources when the cache budget can hold the
+  foreground and two neighbours. The rendered view stays preview-sized; Fit and small budgets
+  retain preview-only preparation. Compare and Reference still reuse both originals when they fit.
+- A magnifying-glass tool beside the zoom percentage supports anchored horizontal press-drag zoom:
+  right zooms in, left zooms out. Shift-drag also scrubs without selecting the tool. Click toggles
+  Fit / the chosen zoom ratio; ordinary drag pans with the tool off and Space-drag pans with it on.
+- Cold decoding and cache eviction remain costly. See [the verification notes](ui-parity.md#raw-browsing-and-scrub-zoom-verification-2026-10-11).
+
+
 ### JPEG XL export
 - Export as JPEG XL (issue #247): Format ▸ JPEG XL in the Export dialog, `format: "jxl"` for agents and the CLI
   (`render in.raw -o out.jxl`). Quality as for JPEG, or Lossless; Effort (Fast / Normal) trades time for a
