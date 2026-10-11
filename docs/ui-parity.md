@@ -92,9 +92,10 @@ All five revisits reused the native source. Cold loading remained 3328 ms. With 
 one native source fit and revisits still decoded; increase the budget on a machine with enough RAM.
 These are scenario measurements, not a claim of Lightroom parity or instantaneous cold loading.
 
-Verification: 16 engine cache/source tests and 7 zoom tests passed; the native Windows RAW and
-zoom input smoke scenarios above passed. `cargo xtask ci` passed formatting, workspace Clippy
-and HEIF checks, then stopped in engine tests (647 passed, 7 failed, 5 ignored). Every failure
+Verification: 16 engine cache/source tests, 7 zoom tests and 40 preview-window tests passed
+(1 profiling test ignored); the native Windows RAW and zoom input smoke scenarios above passed.
+`cargo xtask ci` passed formatting, workspace Clippy and HEIF checks, then stopped in engine
+tests (647 passed, 7 failed, 5 ignored). Every failure
 is in unchanged `tests_sync.rs`, comparing native Windows backslash paths against mixed-separator
 expected strings. Synchronization code and tests were not changed; the full workspace suite is
 not green, and subsequent CI phases were skipped.
