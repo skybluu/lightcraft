@@ -52,11 +52,6 @@
         recovery.setAttribute("aria-describedby", "lightcraft_graphics_explanation");
         recovery.tabIndex = -1;
         recovery.addEventListener("cancel", (event) => event.preventDefault());
-        // a repeated Escape can still close a modal dialog: open it again, so the page stays inert
-        // and the focus trap keeps working
-        recovery.addEventListener("close", () => {
-          if (recovery.isConnected) recovery.showModal();
-        });
         recovery.style.cssText = "position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:32px;background:#1c1c1c;color:#e0e0e0;font:15px/1.5 system-ui;text-align:center;overflow:auto";
         const title = document.createElement("h1");
         title.id = "lightcraft_graphics_title";

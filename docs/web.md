@@ -110,7 +110,7 @@ are the same in every version, so serve them with `Cache-Control: no-cache` (not
   - The app asks for persistent storage (`navigator.storage.persist()`); when the browser doesn't
     grant it, a notice says the library may be evicted under storage pressure.
   - **File ▸ Back Up Library…** downloads a zip of the library files and the stored originals
-    it can read (any it can't are named in `MISSING-ORIGINALS.txt`;
+    it can read (known missing or unreadable ones are named in `MISSING-ORIGINALS.txt`;
     `originals/<hash>/<file name>`, so an unzipped backup is browsable; entries are stored, not
     compressed; at most 4 GB). While a save is failing it refuses to start and says how many
     changes are unsaved and why: presets, prefs and view state come from the stored files, so

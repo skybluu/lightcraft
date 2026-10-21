@@ -174,12 +174,19 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         pick_display_profile: None,
         screen_profile: None,
         backup_library: Some(Box::new(move |session: &mut Session, ui: &UiState, task| {
-            // an open interaction stays open: capture_library snapshots its edits as they are
+            session.end_interaction().map_err(|e| e.to_string())?;
             session.save_view();
             // presets, prefs and view state are copied from storage, so a failing save would leave
             // them stale in the zip (issue #1508)
             if let Some(why) = crate::backup::unsaved_refusal(session.unsaved()) {
                 return Err(why);
+            }
+            // a failed view save is only logged, not counted as unsaved: check storage itself
+            if let Some(e) = backup_files.error() {
+                return Err(format!(
+                    "Backup not started: browser storage is failing ({e}), so the view state in the backup would be out of date. \
+                     Free up storage space; LightCraft retries the save with every change."
+                ));
             }
             let files = crate::backup::capture_library(session, ui, &backup_files)?;
             let backup_id = next_backup.get().wrapping_add(1);
