@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-20 · **Change:** minor (LR-VIEW-ZOOM: only a full-size drag within 20 ms clears a slow-drag verdict) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (LR-LIB-CULL: Assisted Culling runs in the background and reuses unchanged measurements) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -116,7 +116,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-LIB-CAPTURETIME | Edit capture time | P1 | ✅ | `cmd:photo.setCaptureTime`, `cmd:dialog.captureTime`, `crates/catalog/src/dates.rs` | set (the other selected photos shift by the same amount, or `each`), shift by days/hours/minutes, time-zone shift; one undo step, journaled; Info panel button; no “revert to original capture time”. Impossible calendar dates cannot anchor relative shifts; rejection preserves metadata, selection, Undo and Redo. |
 | LR-LIB-SHOWFINDER | Reveal original in file manager | P0 | ✅ | `cmd:app.showInFinder` | ⌘R (see MENU-FILE-SHOWFINDER) |
 | LR-LIB-COVER | Album cover | P2 | ✅ | `cmd:album.setCover` | |
-| LR-LIB-CULL | Assisted culling | P2 | 🟡 | `cmd:photo.analyze`, `cmd:dialog.cull`, `crates/pipeline/src/cull.rs` | Photo ▸ Assisted Culling…: focus score (0–100), clipping, burst grouping (look-alike shots within 10 s) with the sharpest marked; reject below a focus score, pick each burst's best; classical measures — no eyes-closed / expression detection |
+| LR-LIB-CULL | Assisted culling | P2 | 🟡 | `cmd:photo.analyze`, `cmd:dialog.cull`, `crates/pipeline/src/cull.rs` | Photo ▸ Assisted Culling…: focus score (0–100), clipping, burst grouping (look-alike shots within 10 s) with the sharpest marked; reject below a focus score, pick each burst's best; runs in the background with a cancellable activity row (one photo per frame in the browser) and applies as one undo step; unchanged photos reuse their measurements (Re-analyse / `reanalyze` measures again); classical measures — no eyes-closed / expression detection |
 | LR-LIB-ACTIVITY | Comments & likes | OOS | 🚫 | | |
 | LR-LIB-QUICKCOLL | Quick collection [Classic] | P2 | ✅ | `cmd:album.toggleTarget`, `cmd:album.clearQuick` | B in the grids |
 | LR-LIB-VIRTUALCOPY | Virtual copies [Classic] | P1 | ✅ | `cmd:photo.virtualCopy`, `cmd:photo.delete`, `crates/engine/src/cmd/organize.rs` | “Copy N” badge, stacked with the original, same albums, no XMP writes; deleting a copy dissolves or renumbers the stack (#1493); no “Set Copy as Master” |
@@ -797,6 +797,7 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-21 | minor | LR-LIB-CULL: Assisted Culling decodes on a worker (one photo per frame in the browser) with a cancellable activity row, applies as one undo step and reuses unchanged measurements; status unchanged (🟡) |
 | 2026-10-20 | patch | LR-VIEW-ZOOM: the 20 ms rule clears a slow-drag verdict only on a drag timed at full size; a drag that drafts small leaves it unchanged, as the code does; status unchanged |
 | 2026-10-19 | patch | LR-VIEW-ZOOM: the slow slider-drag verdict is described as per photo and control, as the code keys it; status unchanged |
 | 2026-10-15 | minor | LR-VIEW-ZOOM: a slow slider-drag verdict needs two drags over 20 ms and expires after 30 s (doubling to 240 s); hidden-window frame times are ignored; the slow set forgets its oldest entry, not all (issue #330); status unchanged |

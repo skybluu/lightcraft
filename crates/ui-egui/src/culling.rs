@@ -49,6 +49,14 @@ impl Runner {
     }
 }
 
+impl CullTask {
+    /// Still decoding. A finished result that waits for an interaction to end isn't work a
+    /// headless settle should wait for: a client that never ends its drag would stall every request.
+    pub fn is_working(&self) -> bool {
+        self.pending.is_none()
+    }
+}
+
 impl Drop for CullTask {
     fn drop(&mut self) {
         if let Some(flag) = self.guard.cancel_flag() {
@@ -317,6 +325,7 @@ mod tests {
         let ctx = egui::Context::default();
         poll(&mut app, &ctx);
         assert!(app.culling.as_ref().unwrap().pending.is_some());
+        assert!(!app.culling.as_ref().unwrap().is_working(), "a headless settle doesn't wait for the drag to end");
         let task = app.session.activity.list().into_iter().find(|t| t.kind == "culling").unwrap();
         assert!(task.cancellable);
         app.run("activity.cancel", json!({"id": task.id})).unwrap();

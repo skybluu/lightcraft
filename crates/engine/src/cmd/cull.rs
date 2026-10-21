@@ -27,6 +27,13 @@ pub(crate) struct Measurement {
     signature: [f32; 64],
 }
 
+/// What a session keeps of a [`Measurement`]: the signature lives once, in `Session::signatures`.
+#[derive(Clone, Copy)]
+pub(crate) struct Scores {
+    sharpness: f32,
+    clipped: f32,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct MeasurementKey {
     photo: PhotoId,
@@ -46,6 +53,8 @@ struct InputPhoto {
 /// File decoding and pixel analysis detached from the session; applying a result stays on its owner.
 pub struct CullJob {
     photos: Vec<InputPhoto>,
+    /// Targets that can't be analyzed (in Recently Deleted), reported with the result.
+    skipped: Vec<Value>,
     library: std::sync::Arc<()>,
     reject_below: Option<f32>,
     pick_best: bool,
@@ -56,7 +65,8 @@ pub struct CullResult {
     library: std::sync::Arc<()>,
     reject_below: Option<f32>,
     pick_best: bool,
-    rows: Vec<(PhotoId, MeasurementKey, Measurement)>,
+    /// Each measured photo, with what a fresh decode read about its file (the as-shot white).
+    rows: Vec<(PhotoId, MeasurementKey, Measurement, Option<lightcraft_pipeline::SourceInfo>)>,
     failed: Vec<Value>,
     cancelled: bool,
 }
@@ -72,32 +82,44 @@ impl CullJob {
     pub fn prepare(s: &mut Session, p: &Value) -> Result<Self> {
         let ids = if p.get("ids").is_some() || s.selection.ids.len() > 1 { s.targets(p)? } else { s.visible_cloned() };
         let fresh = p.get("reanalyze").and_then(Value::as_bool).unwrap_or(false);
-        let photos = ids
-            .into_iter()
-            .filter_map(|id| {
-                let photo = s.catalog.photo(id)?.clone();
-                if photo.deleted {
-                    return None;
+        let mut photos = Vec::with_capacity(ids.len());
+        let mut skipped = Vec::new();
+        for id in ids {
+            match s.catalog.photo(id).map(|p| p.deleted) {
+                None => {
+                    skipped.push(json!([id.0, format!("no photo {}", id.0)]));
+                    continue;
                 }
-                let key = MeasurementKey {
-                    photo: id,
-                    content: crate::media::content_key(&photo),
-                    source: photo.source.clone(),
-                    generation: s.cull_source_generation(id),
-                };
-                let cached = (!fresh).then(|| s.cull_measurements.get(&id).filter(|(stored, _)| *stored == key).map(|(_, m)| *m)).flatten();
-                let source = cached.is_none().then(|| {
-                    if fresh {
-                        s.media.source_ref_uncached(&photo, crate::media::SourceLevel::Thumb)
-                    } else {
-                        s.media.source_ref(&photo, crate::media::SourceLevel::Thumb)
-                    }
-                });
-                Some(InputPhoto { id, key, name: photo.file_name.clone(), cached, source })
-            })
-            .collect();
+                Some(true) => {
+                    skipped.push(json!([id.0, "the photo is in Recently Deleted"]));
+                    continue;
+                }
+                Some(false) => {}
+            }
+            // On the UI thread for the whole view: borrow the photo, don't clone it.
+            let generation = s.cull_source_generation(id);
+            let Some(photo) = s.catalog.photo(id) else { continue };
+            let key = MeasurementKey { photo: id, content: crate::media::content_key(photo), source: photo.source.clone(), generation };
+            let cached = if fresh {
+                None
+            } else {
+                s.cull_measurements.get(&id).filter(|(stored, _)| *stored == key).and_then(|(_, m)| {
+                    let signature = *s.signatures.get(&key.content)?;
+                    Some(Measurement { sharpness: m.sharpness, clipped: m.clipped, signature })
+                })
+            };
+            let source = cached.is_none().then(|| {
+                if fresh {
+                    s.media.source_ref_uncached(photo, crate::media::SourceLevel::Thumb)
+                } else {
+                    s.media.source_ref(photo, crate::media::SourceLevel::Thumb)
+                }
+            });
+            photos.push(InputPhoto { id, key, name: photo.file_name.clone(), cached, source });
+        }
         Ok(Self {
             photos,
+            skipped,
             library: s.library_identity.clone(),
             reject_below: p.get("rejectBelow").and_then(Value::as_f64).map(|v| v as f32),
             pick_best: p.get("pickBest").and_then(Value::as_bool).unwrap_or(false),
@@ -123,7 +145,7 @@ impl CullJob {
                 reject_below: self.reject_below,
                 pick_best: self.pick_best,
                 rows: Vec::with_capacity(total),
-                failed: Vec::new(),
+                failed: self.skipped,
                 cancelled: false,
             }),
         }
@@ -154,14 +176,19 @@ impl CullRun {
             p.detail(&photo.name);
         }
         let measured = match photo.cached {
-            Some(cached) => Ok(cached),
-            None => photo.source.as_ref().ok_or_else(|| "missing analysis source".to_string()).and_then(|s| s.load()).map(|source| {
+            Some(cached) => Ok((cached, None)),
+            // a malformed file that panics the decoder fails this photo, not the whole run
+            None => crate::guard::catch(&format!("analyzing {}", photo.name), || -> std::result::Result<_, String> {
+                let source = photo.source.as_ref().ok_or_else(|| "missing analysis source".to_string())?.load_source()?;
                 use lightcraft_pipeline::cull;
-                Measurement { sharpness: cull::sharpness(&source), clipped: cull::clipped(&source), signature: cull::signature(&source) }
-            }),
+                let image = &source.image;
+                let m = Measurement { sharpness: cull::sharpness(image), clipped: cull::clipped(image), signature: cull::signature(image) };
+                Ok((m, source.info))
+            })
+            .and_then(|r| r),
         };
         match measured {
-            Ok(measurement) => result.rows.push((photo.id, photo.key, measurement)),
+            Ok((measurement, info)) => result.rows.push((photo.id, photo.key, measurement, info)),
             Err(e) => result.failed.push(json!([photo.id.0, e])),
         }
         if let Some(p) = progress {
@@ -182,7 +209,7 @@ impl CullResult {
         }
         let mut rows = Vec::with_capacity(self.rows.len());
         let mut failed = self.failed;
-        for (id, key, measurement) in self.rows {
+        for (id, key, measurement, info) in self.rows {
             let Some(photo) = s.catalog.photo(id).filter(|p| {
                 !p.deleted
                     && p.source == key.source
@@ -193,8 +220,12 @@ impl CullResult {
                 continue;
             };
             let time = photo.captured.as_deref().and_then(secs);
+            // as a synchronous decode would: a raw's file teaches the catalog its as-shot white
+            if let Some(info) = &info {
+                s.learn_as_shot_wb(id, info);
+            }
             s.signatures.insert(key.content.clone(), measurement.signature);
-            s.cull_measurements.insert(id, (key, measurement));
+            s.cull_measurements.insert(id, (key, Scores { sharpness: measurement.sharpness, clipped: measurement.clipped }));
             rows.push((id, time, measurement.sharpness, measurement.clipped, measurement.signature));
         }
         finish(s, rows, failed, self.reject_below, self.pick_best)
@@ -404,9 +435,11 @@ mod tests {
         let params = json!({"ids": [id.0]});
         analyze(&mut s, &params).unwrap();
         let result = CullJob::prepare(&mut s, &params).unwrap().run(None);
+        s.source_now(id, crate::media::SourceLevel::Thumb).unwrap();
         s.commit("Delete", Op::SetDeleted { id, deleted: true }).unwrap();
         s.execute("edit.undo", &json!({})).unwrap();
         assert!(!s.cull_measurements.contains_key(&id));
+        assert!(s.media.has_source(id, crate::media::SourceLevel::Thumb), "delete and undo leave the file's decoded sources");
         let before = s.undo.len();
         let report = result.apply(&mut s).unwrap();
         assert_eq!(report["photos"], json!([]));
@@ -432,8 +465,10 @@ mod tests {
             preview_checked: p.preview_checked.clone(),
         };
         let before = s.undo.len();
+        s.source_now(id, crate::media::SourceLevel::Thumb).unwrap();
         s.apply_system(op).unwrap();
         assert!(!s.cull_measurements.contains_key(&id));
+        assert!(s.media.has_source(id, crate::media::SourceLevel::Thumb), "bookkeeping keeps decoded sources (and faces)");
         let report = result.apply(&mut s).unwrap();
         assert_eq!(report["photos"], json!([]));
         assert_eq!(report["failed"][0][0], id.0);
@@ -458,5 +493,41 @@ mod tests {
         let report = result.apply(&mut s).unwrap();
         assert_eq!(report["photos"], json!([]));
         assert_eq!(report["failed"][0][0], id.0);
+    }
+
+    #[test]
+    fn deleted_targets_are_reported_not_dropped() {
+        let mut s = Session::with_demo();
+        let id = s.active().unwrap();
+        s.commit("Delete", Op::SetDeleted { id, deleted: true }).unwrap();
+        let report = analyze(&mut s, &json!({"ids": [id.0]})).unwrap();
+        assert_eq!(report["photos"], json!([]));
+        assert_eq!(report["failed"][0][0], id.0);
+        assert!(report["failed"][0][1].as_str().unwrap().contains("Recently Deleted"));
+    }
+
+    #[test]
+    fn a_decoder_panic_fails_its_photo_and_the_run_goes_on() {
+        let mut s = Session::new();
+        for (n, name) in [(1, "boom.png"), (2, "fine.png")] {
+            let photo = lightcraft_catalog::Photo::new(
+                PhotoId(n),
+                lightcraft_catalog::Source::File { path: format!("/nowhere/{name}") },
+                name,
+                "PNG",
+                48,
+                32,
+                "2026-01-01T00:00:00",
+            );
+            s.catalog.apply(Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+        }
+        s.media.file_loader = Some(std::sync::Arc::new(|path, _| {
+            assert!(!path.ends_with("boom.png"), "a malformed file");
+            Ok((lightcraft_raster::Rgb32f::new(48, 32), Default::default()))
+        }));
+        let report = CullJob::prepare(&mut s, &json!({"ids": [1, 2]})).unwrap().run(None).apply(&mut s).unwrap();
+        assert_eq!(report["photos"].as_array().unwrap().len(), 1);
+        assert_eq!(report["failed"][0][0], 1);
+        assert!(report["failed"][0][1].as_str().unwrap().contains("failed unexpectedly"));
     }
 }
