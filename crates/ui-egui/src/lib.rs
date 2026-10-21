@@ -609,6 +609,15 @@ impl LightcraftApp {
             if r.is_ok() {
                 docking::reveal_command(self, id)?;
             }
+            if self.ui.space_zoom_tap.is_some_and(|(view, fullscreen, _)| {
+                !self.ui.zoom_scrub_allowed(false, false)
+                    || self.ui.view != view
+                    || self.ui.fullscreen != fullscreen
+                    || self.ui.slideshow.is_some()
+                    || self.ui.dialog.is_some()
+            }) {
+                self.ui.space_zoom_tap = None;
+            }
             return r.map_err(CommandError::from);
         }
         let params = if id == "crop.aspect"

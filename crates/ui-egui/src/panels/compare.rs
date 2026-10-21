@@ -193,7 +193,15 @@ fn area_and_filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui) -> Rect {
 
 /// Draw one photo fitted into `area` (rendered at its display size into `slot`), with its caption
 /// strip below. Returns the image rect and the click/drag response.
-fn photo_tile(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area: Rect, label: &str, zoom: Zoom) -> (Rect, egui::Response) {
+fn photo_tile(
+    app: &mut LightcraftApp,
+    ui: &mut egui::Ui,
+    id: PhotoId,
+    slot: Slot,
+    area: Rect,
+    label: &str,
+    mut zoom: Zoom,
+) -> (Rect, egui::Response) {
     let t = Tokens::get(ui.ctx());
     let ppp = ui.ctx().pixels_per_point();
     let resp = ui.interact(area, egui::Id::new(("cull-tile", slot_index(slot), id.0)), Sense::click_and_drag());
@@ -219,6 +227,20 @@ fn photo_tile(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, slot: Slo
             ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(crate::region::HOLD_SECS));
         } else if resp.dragged() {
             super::detail::pan_image(app, img_area, img, resp.drag_delta());
+        }
+        if app.ui.tool == "zoom"
+            && resp.clicked()
+            && let Some(at) = resp.interact_pointer_pos().filter(|p| img_area.contains(*p))
+        {
+            zoom = if zoom == Zoom::Fit { Zoom::Percent(app.ui.click_zoom as f32) } else { Zoom::Fit };
+            let point = ((at.x - img.left()) / img.width(), (at.y - img.top()) / img.height());
+            let size = super::detail::fit_rect(img_area, aspect, zoom, native, ppp, (0.5, 0.5)).size();
+            let offset = img_area.center() - at;
+            app.ui.pan = (point.0 + offset.x / size.x.max(1.0), point.1 + offset.y / size.y.max(1.0));
+            // Pointer zoom keeps this pane's image point under the pointer; keyboard zoom may centre the active AF point.
+            app.ui.zoom = zoom;
+            app.ui.zoom_anim = true;
+            img = super::detail::fit_rect(img_area, aspect, app.ui.zoom, native, ppp, app.ui.pan);
         }
     }
     let texture_side = super::detail::texture_side(ui.ctx());
@@ -491,7 +513,7 @@ pub fn show_compare(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if resp.clicked() {
             select_pair(app, sel, cand, id);
         }
-        if resp.double_clicked() {
+        if resp.double_clicked() && app.ui.tool != "zoom" {
             app.ui.zoom = if app.ui.zoom == Zoom::Fit { Zoom::Percent(100.0) } else { Zoom::Fit };
         }
         resp.context_menu(|ui| {
