@@ -1368,10 +1368,10 @@ mod tests {
     /// the menu, as a refused export does; the refusal used to reach only the control channel.
     #[test]
     fn a_refused_backup_from_the_menu_shows_why() {
-        // the host refuses, as the web one does while changes are still unsaved (issue #1508)
+        // a host that refuses to start a backup: its reason reaches the user (issue #1508)
         let refusal = "Backup not started: 1 change could not be saved to browser storage yet";
         let services = crate::Services {
-            backup_library: Some(Box::new(move |_: &mut lightcraft_engine::Session| Err(refusal.to_string()))),
+            backup_library: Some(Box::new(move |_, _, _| Err(refusal.to_string()))),
             ..Default::default()
         };
         let app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
