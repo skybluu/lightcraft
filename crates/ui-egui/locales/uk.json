@@ -2338,5 +2338,7 @@
   "Checking the GPU…": "Перевірка ГП…",
   "CPU": "ЦП",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "Модель облич використовує ГП, лише якщо перевірка показала, що він дає ті самі результати швидше.",
-  "Checking the GPU for faces": "Перевірка ГП для облич"
+  "Checking the GPU for faces": "Перевірка ГП для облич",
+  "Zoom Tool": "Інструмент «Масштаб»",
+  "Zoom tool: click to toggle zoom; drag right to zoom in, left to zoom out. Shift-drag also zooms without this tool. Tap Space to toggle zoom on release; hold Space and drag to pan without toggling.": "Інструмент «Масштаб»: клацання перемикає масштаб; перетягування вправо збільшує, вліво зменшує. Перетягування з Shift теж змінює масштаб без цього інструмента. Коротке натискання пробілу перемикає масштаб після відпускання; утримуйте пробіл і перетягуйте, щоб зсувати без перемикання."
 }

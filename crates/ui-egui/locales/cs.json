@@ -2392,5 +2392,7 @@
   "End Slideshow": "Ukončit prezentaci",
   "Save Current Settings as New Effect Preset…": "Uložit aktuální nastavení jako nové přednastavení efektu…",
   "Manage Effect Presets…": "Spravovat přednastavení efektů…",
-  "Export Effect Presets…": "Exportovat přednastavení efektů…"
+  "Export Effect Presets…": "Exportovat přednastavení efektů…",
+  "Zoom Tool": "Nástroj Lupa",
+  "Zoom tool: click to toggle zoom; drag right to zoom in, left to zoom out. Shift-drag also zooms without this tool. Tap Space to toggle zoom on release; hold Space and drag to pan without toggling.": "Nástroj Lupa: kliknutím přepnete zvětšení; tažením doprava přiblížíte, doleva oddálíte. Tažení se Shiftem zvětšuje i bez tohoto nástroje. Klepnutím na mezerník přepnete zvětšení při uvolnění; podržením mezerníku a tažením posunete snímek bez přepnutí."
 }

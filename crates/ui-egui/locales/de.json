@@ -2341,5 +2341,7 @@
   "Checking the GPU…": "GPU wird geprüft …",
   "CPU": "CPU",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "Ein Gesichtsmodell nutzt die GPU nur, wenn eine Prüfung zeigt, dass sie dieselben Ergebnisse schneller liefert.",
-  "Checking the GPU for faces": "GPU für Gesichter wird geprüft"
+  "Checking the GPU for faces": "GPU für Gesichter wird geprüft",
+  "Zoom Tool": "Zoom-Werkzeug",
+  "Zoom tool: click to toggle zoom; drag right to zoom in, left to zoom out. Shift-drag also zooms without this tool. Tap Space to toggle zoom on release; hold Space and drag to pan without toggling.": "Zoom-Werkzeug: Klicken schaltet den Zoom um; nach rechts ziehen vergrößert, nach links verkleinert. Ziehen mit Umschalt zoomt auch ohne dieses Werkzeug. Leertaste kurz drücken schaltet beim Loslassen den Zoom um; Leertaste halten und ziehen verschiebt das Bild, ohne umzuschalten."
 }

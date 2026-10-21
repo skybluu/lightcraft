@@ -2141,5 +2141,7 @@
   "Checking the GPU…": "正在檢查 GPU…",
   "CPU": "CPU",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "只有在檢查顯示 GPU 能更快得出相同結果時，臉孔模型才會使用 GPU。",
-  "Checking the GPU for faces": "正在檢查用於臉孔的 GPU"
+  "Checking the GPU for faces": "正在檢查用於臉孔的 GPU",
+  "Zoom Tool": "縮放工具",
+  "Zoom tool: click to toggle zoom; drag right to zoom in, left to zoom out. Shift-drag also zooms without this tool. Tap Space to toggle zoom on release; hold Space and drag to pan without toggling.": "縮放工具：按一下切換縮放；向右拖曳放大，向左拖曳縮小。按住 Shift 拖曳時，不選此工具也能縮放。輕按空白鍵會在放開時切換縮放；按住空白鍵拖曳可平移而不切換縮放。"
 }

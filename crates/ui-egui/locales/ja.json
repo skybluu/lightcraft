@@ -2340,5 +2340,7 @@
   "Checking the GPU…": "GPU を確認中…",
   "CPU": "CPU",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "顔モデルが GPU を使うのは、同じ結果をより速く出せると確認できた場合だけです。",
-  "Checking the GPU for faces": "顔用の GPU を確認中"
+  "Checking the GPU for faces": "顔用の GPU を確認中",
+  "Zoom Tool": "ズームツール",
+  "Zoom tool: click to toggle zoom; drag right to zoom in, left to zoom out. Shift-drag also zooms without this tool. Tap Space to toggle zoom on release; hold Space and drag to pan without toggling.": "ズームツール：クリックでズームを切り替え、右へドラッグで拡大、左へドラッグで縮小します。Shift キーを押しながらドラッグすると、このツールなしでもズームできます。Space キーを短く押すと離したときにズームを切り替え、Space キーを押したままドラッグすると切り替えずに移動します。"
 }

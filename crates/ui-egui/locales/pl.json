@@ -2267,5 +2267,7 @@
   "SDR Shadows": "Cienie SDR",
   "SDR Whites": "Biele SDR",
   "SDR Clarity": "Przejrzystość SDR",
-  "Face Models on the GPU": "Modele twarzy przetwarzane na GPU"
+  "Face Models on the GPU": "Modele twarzy przetwarzane na GPU",
+  "Zoom Tool": "Narzędzie Lupa",
+  "Zoom tool: click to toggle zoom; drag right to zoom in, left to zoom out. Shift-drag also zooms without this tool. Tap Space to toggle zoom on release; hold Space and drag to pan without toggling.": "Narzędzie Lupa: kliknij, aby przełączyć powiększenie; przeciągnij w prawo, aby powiększyć, w lewo, aby pomniejszyć. Przeciąganie z Shiftem powiększa także bez tego narzędzia. Krótkie naciśnięcie spacji przełącza powiększenie po zwolnieniu; przytrzymaj spację i przeciągnij, aby przesunąć bez przełączania."
 }
