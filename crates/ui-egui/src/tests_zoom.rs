@@ -606,6 +606,21 @@ fn zoom_button_toggles_the_tool_and_command_preserves_comparison_views() {
     }
 }
 
+// Given the magnifier selected and Masking open (which keeps the tool), Space still toggles zoom
+#[test]
+fn space_toggles_zoom_under_an_editing_panel_that_keeps_the_magnifier() {
+    use crate::state::{RightPanel, Zoom};
+    let mut h = detail();
+    h.app.run("tool.zoom", json!({})).unwrap();
+    h.app.run("view.zoomFit", json!({})).unwrap();
+    h.app.run("panel.masking", json!({})).unwrap();
+    assert_eq!((h.app.ui.right, h.app.ui.tool.as_str()), (RightPanel::Masking, "zoom"));
+    h.step();
+    h.request("ui.key", json!({"key": "Space"}), T);
+    h.step();
+    assert_eq!(h.app.ui.zoom, Zoom::Percent(100.0), "Space is not swallowed where the magnifier can't scrub");
+}
+
 #[test]
 fn space_pressed_during_a_scrub_cancels_zoom_and_pans_without_restarting() {
     use crate::panels::detail::Gesture;

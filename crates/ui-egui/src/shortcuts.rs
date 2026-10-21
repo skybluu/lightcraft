@@ -376,7 +376,9 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context) {
     let space_popup = egui::Popup::is_any_open(ctx);
     // Esc that just took a text field's focus away (it gives back the field's text) does nothing else
     let popup_open = space_popup || app.text_focus;
-    let space_zoom = app.ui.tool == "zoom" && app.ui.slideshow.is_none();
+    // The magnifier owns Space only where it can scrub: under an editing panel (Masking, Remove…)
+    // the tool stays selected, and Space keeps its usual press-time toggle.
+    let space_zoom = app.ui.tool == "zoom" && app.ui.slideshow.is_none() && space_scrub_allowed;
     let space_binding = (Modifiers::NONE, Key::Space);
     let space_zoom_binding =
         !native("Space") && (!taken.contains(&space_binding) || shortcut_of(keymap, "view.zoomToggle").and_then(parse) == Some(space_binding));
@@ -387,15 +389,16 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context) {
         if !space_zoom
             || !space_zoom_binding
             || space_popup
-            || !space_scrub_allowed
             || !i.focused
             || i.events.iter().any(|event| matches!(event, egui::Event::WindowFocused(false)))
             || app.ui.space_zoom_tap.is_some_and(|tap| tap != tap_context)
         {
             app.ui.space_zoom_tap = None;
         } else {
+            // A scrub left behind by a view change mid-drag ends with the button: it no longer owns Space.
             if i.pointer.is_decidedly_dragging()
-                || matches!(app.gesture, Some(crate::panels::detail::Gesture::ScrubZoom(_) | crate::panels::detail::Gesture::Pan { .. }))
+                || matches!(app.gesture, Some(crate::panels::detail::Gesture::Pan { .. }))
+                || matches!(app.gesture, Some(crate::panels::detail::Gesture::ScrubZoom(_)) if i.pointer.primary_down())
             {
                 app.ui.space_zoom_tap = None;
             }
