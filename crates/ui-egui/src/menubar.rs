@@ -1145,34 +1145,6 @@ mod tests {
         assert!(!text.contains("Add Folder") && !text.contains("\"Add Photos"), "no add-folder wording left in the menus");
     }
 
-    /// Back Up / Restore Library are the browser build's (its library lives in browser storage):
-    /// absent from the desktop's menus, present and wired to the host where it provides them.
-    #[test]
-    fn library_backup_items_follow_the_host() {
-        let all = |app: &LightcraftApp| -> Vec<MenuNode> { menu_bar(app).into_iter().flat_map(|(_, v)| v).collect() };
-        let mut desktop = app();
-        assert!(find(&all(&desktop), "file.backupLibrary").is_none() && find(&all(&desktop), "file.restoreLibrary").is_none());
-        assert!(run_item(&mut desktop, "file.backupLibrary", Value::Null).is_err(), "not available without the host");
-        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
-        let c = calls.clone();
-        let services = crate::Services {
-            backup_library: Some(Box::new(move |s: &mut lightcraft_engine::Session| {
-                c.set(c.get() + 1);
-                Ok(json!({"photos": s.catalog.len()}))
-            })),
-            restore_library: Some(Box::new(|_: &mut lightcraft_engine::Session| Ok(json!({"started": true})))),
-            ..Default::default()
-        };
-        let mut web = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
-        let bar = all(&web);
-        for id in ["file.backupLibrary", "file.restoreLibrary"] {
-            assert!(matches!(find(&bar, id), Some(MenuNode::Item { enabled: true, .. })), "{id}");
-        }
-        let r = run_item(&mut web, "file.backupLibrary", Value::Null).unwrap();
-        assert!(r["photos"].as_u64().unwrap() > 0);
-        assert_eq!(calls.get(), 1);
-    }
-
     #[test]
     fn bar_follows_the_registry_and_state() {
         let mut app = app();

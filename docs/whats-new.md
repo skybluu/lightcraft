@@ -24,6 +24,17 @@
   another ratio (4 × 5, 2 × 3…) keeps it portrait, as in Lightroom, and a Custom ratio taller than wide gives a
   portrait crop.
 
+### Browser recovery keeps available work
+- A WebGL recovery backup and File ▸ Back Up Library now save the catalog, edits and available
+  originals even if other source photos are missing. A warning names the omitted files and the
+  ZIP includes `MISSING-ORIGINALS.txt`; keep those source photos separately. The recovery panel
+  follows the active UI language, and its backup uses the registered `web.recoveryBackup` command.
+  Backup remains available when browser storage cannot save; it captures pending edits directly
+  into a separate snapshot. Recovery reload waits for its own backup, not an older download.
+  A failed original-list operation no longer blocks saving catalogued or resident photos: the ZIP and
+  outcome warn that other stored originals may be omitted. Backup work uses the shared activity stack.
+  The recovery dialog keeps keyboard focus inside its controls until the work is protected and reloaded.
+
 ## 2026-10-15
 
 ### Constrain Crop tightens the crop you see
