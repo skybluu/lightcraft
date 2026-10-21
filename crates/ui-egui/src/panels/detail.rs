@@ -1530,7 +1530,8 @@ fn general_cursor(app: &LightcraftApp, ui: &egui::Ui, resp: &egui::Response, img
                 egui::CursorIcon::Grab
             }
         }
-        _ => egui::CursorIcon::ZoomIn,
+        "" => egui::CursorIcon::ZoomIn,
+        _ => return,
     };
     ui.ctx().set_cursor_icon(cursor);
 }
