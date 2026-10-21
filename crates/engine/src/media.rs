@@ -162,6 +162,11 @@ pub struct Twin {
     mix: std::sync::Mutex<Option<(u32, Arc<Rgb32f>)>>,
 }
 
+/// Cache cost per pixel of a decoded source's picture (`Rgb32f`).
+const SOURCE_PIXEL_BYTES: usize = 12;
+/// Cache cost per pixel reserved for a denoised twin and room for its lazy mix.
+const TWIN_PIXEL_BYTES: usize = 24;
+
 impl Twin {
     pub fn new(image: Arc<Rgb32f>) -> Twin {
         Twin { image, mix: std::sync::Mutex::new(None) }
@@ -169,7 +174,7 @@ impl Twin {
 
     /// Bytes reserved for the twin and its lazy mix, before either cache cost can grow.
     fn bytes(&self) -> usize {
-        self.image.data.len().saturating_mul(24)
+        self.image.data.len().saturating_mul(TWIN_PIXEL_BYTES)
     }
 }
 
@@ -221,7 +226,18 @@ impl DecodedSource {
     pub fn bytes(&self) -> usize {
         let mattes = self.info.as_ref().and_then(|i| i.mattes.as_ref()).map_or(0, |m| m.bytes());
         let mattes = mattes + self.info.as_ref().and_then(|i| i.local_tone.as_ref()).map_or(0, |t| t.map.gains.len() * 4);
-        self.image.data.len() * 12 + 64 + std::mem::size_of::<SourceInfo>() + mattes + self.denoised.as_ref().map_or(0, |t| t.bytes())
+        self.image.data.len() * SOURCE_PIXEL_BYTES + 64 + std::mem::size_of::<SourceInfo>() + mattes + self.denoised.as_ref().map_or(0, |t| t.bytes())
+    }
+
+    /// [`Self::bytes`] of a `width × height` source before it is decoded (mattes aside), with a
+    /// denoised twin when `denoised`. `None` while the size is not known (0).
+    pub fn estimated_bytes(width: u32, height: u32, denoised: bool) -> Option<usize> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let px = (width as usize).saturating_mul(height as usize);
+        let per_px = SOURCE_PIXEL_BYTES + if denoised { TWIN_PIXEL_BYTES } else { 0 };
+        Some(px.saturating_mul(per_px).saturating_add(64 + std::mem::size_of::<SourceInfo>()))
     }
 
     /// What to render these pixels against: the decoder's facts, else `header` (the catalog's)
@@ -344,6 +360,13 @@ pub struct MediaCache {
     full: Vec<(PhotoId, DecodedSource, u64)>,
     /// The photo the loupe shows ([`Self::set_on_screen`]): its original is not evicted for the budget.
     on_screen: Option<PhotoId>,
+    /// Whether the foreground's renders read its original: `None` until a render asks for it or
+    /// the view draws it at Fit ([`Self::foreground_needs_full`], [`Self::foreground_fits`]).
+    /// Another original is kept as its fallback unless it is known to need none (`Some(false)`).
+    on_screen_full: Option<bool>,
+    /// Lookups don't refresh recency: a prefetch job rebuilt every idle frame must not keep its
+    /// neighbours' sources looking newest.
+    quiet: bool,
     /// How many previews to keep (LRU).
     pub preview_capacity: usize,
     /// Bytes all decoded sources and rendered previews in memory may take together (the cache
@@ -421,6 +444,8 @@ impl Default for MediaCache {
             previews: Vec::new(),
             full: Vec::new(),
             on_screen: None,
+            on_screen_full: None,
+            quiet: false,
             preview_capacity: 0,
             budget,
             file_loader: None,
@@ -467,6 +492,7 @@ impl MediaCache {
         self.previews.clear();
         self.full.clear();
         self.on_screen = None;
+        self.on_screen_full = None;
     }
 
     /// Bytes the caches may hold together.
@@ -483,19 +509,31 @@ impl MediaCache {
     }
 
     /// Protect the foreground full-resolution original from budget eviction. While its decode
-    /// is pending, retain the newest full source as a single oversize fallback.
+    /// is pending, retain the newest full source as a single oversize fallback (not once the
+    /// foreground is drawn at Fit without one, [`Self::foreground_fits`]).
     pub fn set_on_screen(&mut self, id: Option<PhotoId>) {
         if self.on_screen != id {
             self.on_screen = id;
+            self.on_screen_full = None;
             self.enforce_budget();
         }
     }
 
-    /// Move the foreground to `id` only while there is one: the view decides whether a photo is
-    /// on screen at all ([`Self::set_on_screen`]), so polling outside Detail doesn't pin it back.
-    pub fn follow_on_screen(&mut self, id: Option<PhotoId>) {
-        if self.on_screen.is_some() {
-            self.set_on_screen(id);
+    /// A render of `id` reads its original (a window past 1:1, a tight crop): when `id` is the
+    /// foreground, its fallback stays until that decode lands.
+    pub fn foreground_needs_full(&mut self, id: PhotoId) {
+        if self.on_screen == Some(id) {
+            self.on_screen_full = Some(true);
+        }
+    }
+
+    /// The view draws `id` whole, with no window past what its preview holds (Fit). A foreground
+    /// that hasn't asked for its original needs no fallback then: an earlier photo's original
+    /// counts against the budget again instead of staying pinned while the user browses at Fit.
+    pub fn foreground_fits(&mut self, id: PhotoId) {
+        if self.on_screen == Some(id) && self.on_screen_full.is_none() {
+            self.on_screen_full = Some(false);
+            self.enforce_budget();
         }
     }
 
@@ -511,9 +549,11 @@ impl MediaCache {
     pub fn enforce_budget(&mut self) {
         // The protected original cannot be evicted, so its complete cost (including twins)
         // does not count against the budget. Apply that equally to the foreground and to the
-        // previous original kept while the foreground has no native source yet.
+        // previous original kept while the foreground has no native source yet (not once it is
+        // known to render without one).
+        let fallback = self.on_screen.filter(|_| self.on_screen_full != Some(false));
         let protected_full =
-            self.full.iter().find(|e| Some(e.0) == self.on_screen).or_else(|| self.on_screen.and_then(|_| self.full.iter().max_by_key(|e| e.2)));
+            self.full.iter().find(|e| Some(e.0) == self.on_screen).or_else(|| fallback.and_then(|_| self.full.iter().max_by_key(|e| e.2)));
         let pinned = protected_full.map_or(0, |e| e.1.bytes());
         let protected_full = protected_full.map(|e| e.0);
         let mut held = self.held().saturating_sub(pinned);
@@ -546,14 +586,24 @@ impl MediaCache {
     fn get_source(&mut self, id: PhotoId, level: SourceLevel) -> Option<DecodedSource> {
         match level {
             SourceLevel::Thumb => self.thumbs.get(&id).cloned(),
-            SourceLevel::Preview => self.previews.iter_mut().find(|e| e.0 == id).map(|e| {
-                e.2 = lightcraft_preview::next_tick();
-                e.1.clone()
-            }),
-            SourceLevel::Full => self.full.iter_mut().find(|e| e.0 == id).map(|e| {
-                e.2 = lightcraft_preview::next_tick();
-                e.1.clone()
-            }),
+            SourceLevel::Preview => {
+                let quiet = self.quiet;
+                self.previews.iter_mut().find(|e| e.0 == id).map(|e| {
+                    if !quiet {
+                        e.2 = lightcraft_preview::next_tick();
+                    }
+                    e.1.clone()
+                })
+            }
+            SourceLevel::Full => {
+                let quiet = self.quiet;
+                self.full.iter_mut().find(|e| e.0 == id).map(|e| {
+                    if !quiet {
+                        e.2 = lightcraft_preview::next_tick();
+                    }
+                    e.1.clone()
+                })
+            }
         }
     }
 
@@ -669,6 +719,15 @@ impl MediaCache {
             && level == SourceLevel::Thumb
             && self.denoise.spec(p.id).is_none()
             && let Some(big) = self.get_source(p.id, SourceLevel::Preview)
+        {
+            return SourceRef::Fit { from: Box::new(big), max_edge: level.max_edge() };
+        }
+        // so is a preview of a photo whose original is decoded (a warmed neighbour), instead of
+        // decoding its file again
+        if cached
+            && level == SourceLevel::Preview
+            && self.denoise.spec(p.id).is_none()
+            && let Some(big) = self.get_source(p.id, SourceLevel::Full)
         {
             return SourceRef::Fit { from: Box::new(big), max_edge: level.max_edge() };
         }
@@ -1437,6 +1496,9 @@ impl crate::Session {
     /// photo's view preview (memory, and disk with a library) for [`Self::quick_view_job`].
     pub fn loupe_job(&mut self, id: PhotoId, max_w: usize, max_h: usize, apply_crop: bool) -> Option<RenderJob> {
         let mut job = self.render_job(id, max_w, max_h, false, apply_crop)?;
+        if job.level == SourceLevel::Full {
+            self.media.foreground_needs_full(id);
+        }
         let p = self.catalog.photo(id)?;
         job.view_cache = Some((self.media.rendered.clone(), Self::view_key(p, apply_crop)));
         Some(job)
@@ -1444,20 +1506,61 @@ impl crate::Session {
 
     /// Prepare a neighbour's view, optionally decoding its native source for sharp zooming.
     /// The rendered view stays preview-sized. Native sources are warmed only when the cache
-    /// can hold the foreground, two neighbours and rendered previews without replacing it.
-    pub fn prefetch_job(&mut self, id: PhotoId, max_w: usize, max_h: usize, apply_crop: bool, warm_full: bool) -> Option<RenderJob> {
+    /// can hold the foreground, this neighbour and the one `beside` it (the other side of the
+    /// foreground; this one's size again when there is none), the decoded previews and
+    /// thumbnails it holds and rendered previews, without replacing any of them. A photo whose
+    /// size isn't known yet is never warmed. Building the job leaves the cache's recency as it
+    /// was: it runs every idle frame.
+    pub fn prefetch_job(
+        &mut self,
+        id: PhotoId,
+        max_w: usize,
+        max_h: usize,
+        apply_crop: bool,
+        warm_full: bool,
+        beside: Option<PhotoId>,
+    ) -> Option<RenderJob> {
+        self.media.quiet = true;
+        let job = self.prefetch_job_quiet(id, max_w, max_h, apply_crop, warm_full, beside);
+        self.media.quiet = false;
+        job
+    }
+
+    fn prefetch_job_quiet(
+        &mut self,
+        id: PhotoId,
+        max_w: usize,
+        max_h: usize,
+        apply_crop: bool,
+        warm_full: bool,
+        beside: Option<PhotoId>,
+    ) -> Option<RenderJob> {
         let mut job = self.loupe_job(id, max_w.min(SourceLevel::Preview.max_edge()), max_h.min(SourceLevel::Preview.max_edge()), apply_crop)?;
         let p = self.catalog.photo(id)?;
-        let full_fits = if warm_full {
-            let estimate = |p: &Photo| {
-                let copies = if self.media.denoise.spec(p.id).is_some() { 3 } else { 1 };
-                (p.width as usize).saturating_mul(p.height as usize).saturating_mul(12).saturating_mul(copies).saturating_add(4096)
+        let full_fits = warm_full && {
+            let estimate = |p: &Photo| DecodedSource::estimated_bytes(p.width, p.height, self.media.denoise.spec(p.id).is_some());
+            let foreground = match self.active().and_then(|id| self.catalog.photo(id)) {
+                Some(f) => estimate(f),
+                None => Some(0),
             };
-            let foreground = self.active().and_then(|id| self.catalog.photo(id)).map_or(0, |p| estimate(p));
-            let need = foreground.saturating_add(estimate(p).saturating_mul(2)).saturating_add(RENDERED_MEM_BYTES);
-            need <= self.media.budget()
-        } else {
-            false
+            let this = estimate(p);
+            let other = match beside.and_then(|id| self.catalog.photo(id)) {
+                Some(b) => estimate(b),
+                None => this,
+            };
+            let (thumbs, previews, _) = self.media.usage();
+            match (foreground, this, other) {
+                (Some(f), Some(t), Some(o)) => {
+                    let need = f
+                        .saturating_add(t)
+                        .saturating_add(o)
+                        .saturating_add(thumbs.bytes)
+                        .saturating_add(previews.bytes)
+                        .saturating_add(RENDERED_MEM_BYTES);
+                    need <= self.media.budget()
+                }
+                _ => false,
+            }
         };
         let level = if full_fits {
             SourceLevel::Full
@@ -1518,6 +1621,9 @@ impl crate::Session {
         before: bool,
     ) -> Option<RenderJob> {
         let mut job = self.render_job(id, full_w, full_h, before, apply_crop)?;
+        if job.level == SourceLevel::Full {
+            self.media.foreground_needs_full(id);
+        }
         // what the window's spots and Auto Mask strokes read must fit in one render: else the
         // caller keeps the whole-frame render (a window alone would come out wrong)
         let p = self.catalog.photo(id)?;
@@ -1984,7 +2090,7 @@ mod tests {
         edges.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
         s.media.set_budget(2 << 30);
         let preview_key = s.loupe_job(b, 800, 800, true).unwrap().key;
-        let warm = s.prefetch_job(b, 800, 800, true, true).unwrap();
+        let warm = s.prefetch_job(b, 800, 800, true, true, None).unwrap();
         assert_eq!((warm.request.max_w, warm.request.max_h), (800, 800));
         assert_eq!(warm.level, SourceLevel::Full);
         assert_eq!(warm.key, preview_key ^ (((SourceLevel::Preview as u64) ^ (SourceLevel::Full as u64)) << 60));
@@ -2002,7 +2108,7 @@ mod tests {
             s.media.clear_sources();
             s.media.set_budget(budget);
             edges.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
-            let preview = s.prefetch_job(b, 800, 800, true, warm_full).unwrap();
+            let preview = s.prefetch_job(b, 800, 800, true, warm_full, None).unwrap();
             assert_eq!((preview.request.max_w, preview.request.max_h), (800, 800));
             assert_eq!(preview.level, SourceLevel::Preview);
             assert_eq!(preview.key, preview_key);
@@ -2032,7 +2138,7 @@ mod tests {
         for (budget, warm_full) in [(64 << 20, true), (2 << 30, false)] {
             s.media.set_budget(budget);
             for edge in [800, 6000] {
-                let job = s.prefetch_job(id, edge, edge, true, warm_full).unwrap();
+                let job = s.prefetch_job(id, edge, edge, true, warm_full, None).unwrap();
                 assert_eq!(job.level, SourceLevel::Preview);
                 assert!(job.view_cache.is_none(), "a soft stand-in is never saved as the view preview");
                 assert_eq!((job.request.max_w, job.request.max_h), (edge.min(2560), edge.min(2560)));
@@ -2043,9 +2149,9 @@ mod tests {
             }
         }
         s.media.set_budget(2 << 30);
-        assert_eq!(s.prefetch_job(id, 800, 800, true, true).unwrap().level, SourceLevel::Full);
+        assert_eq!(s.prefetch_job(id, 800, 800, true, true, None).unwrap().level, SourceLevel::Full);
         s.media.denoise.set(id, DenoiseSpec { product: "cropped.lcdn".into(), key: "twin".into(), make: None });
-        assert_eq!(s.prefetch_job(id, 800, 800, true, true).unwrap().level, SourceLevel::Preview, "native estimates reserve the twin and lazy mix");
+        assert_eq!(s.prefetch_job(id, 800, 800, true, true, None).unwrap().level, SourceLevel::Preview, "native estimates reserve the twin and lazy mix");
     }
 
     #[test]
@@ -2062,7 +2168,7 @@ mod tests {
             assert_eq!(edge, usize::MAX);
             Ok((Rgb32f::new(3000, 2), SourceInfo { raw: true, as_shot_temp: 4986.0, as_shot_tint: -2.0, ..Default::default() }))
         }));
-        let old = s.prefetch_job(id, 800, 800, true, true).unwrap().run();
+        let old = s.prefetch_job(id, 800, 800, true, true, None).unwrap().run();
         assert!(old.loaded.is_some());
         s.catalog
             .apply(Op::SetContent {
@@ -2082,23 +2188,79 @@ mod tests {
         assert!(!s.media.has_source(id, SourceLevel::Full));
         assert_eq!(s.catalog.photo(id).unwrap().as_shot_wb, wb);
         assert_eq!(s.pending_log.len(), log, "stale decoder facts cannot update the replacement's metadata");
-        let current = s.prefetch_job(id, 800, 800, true, true).unwrap().run();
+        let current = s.prefetch_job(id, 800, 800, true, true, None).unwrap().run();
         s.accept(&current);
         assert!(s.media.has_source(id, SourceLevel::Full));
         assert_eq!(s.catalog.photo(id).unwrap().as_shot_wb, Some((4986.0, -2.0)), "current decoder facts still teach the catalog");
     }
 
     #[test]
-    fn following_the_active_photo_never_pins_one_outside_the_loupe() {
+    fn a_foreground_at_fit_releases_the_previous_original() {
+        let image = Arc::new(Rgb32f::new(8, 8));
         let mut m = MediaCache::default();
-        m.follow_on_screen(Some(PhotoId(1)));
-        assert_eq!(m.on_screen, None, "no view put a photo on screen");
+        m.set_budget(0);
         m.set_on_screen(Some(PhotoId(1)));
-        m.follow_on_screen(Some(PhotoId(2)));
-        assert_eq!(m.on_screen, Some(PhotoId(2)), "the loupe follows the active photo");
-        m.set_on_screen(None);
-        m.follow_on_screen(Some(PhotoId(2)));
-        assert_eq!(m.on_screen, None);
+        m.insert(PhotoId(1), SourceLevel::Full, image.clone());
+        // stepping on at 1:1: the next photo's window asks for its original, the fallback stays
+        m.set_on_screen(Some(PhotoId(2)));
+        m.foreground_needs_full(PhotoId(2));
+        m.foreground_fits(PhotoId(2));
+        assert!(m.has_source(PhotoId(1), SourceLevel::Full), "kept while the foreground's decode is pending");
+        // stepping on at Fit: nothing asks for the next original, so the earlier one is not pinned
+        m.set_on_screen(Some(PhotoId(3)));
+        m.foreground_fits(PhotoId(3));
+        assert!(!m.has_source(PhotoId(1), SourceLevel::Full), "browsing at Fit releases the earlier original");
+        m.foreground_fits(PhotoId(4));
+        m.foreground_needs_full(PhotoId(4));
+        assert_eq!(m.on_screen_full, Some(false), "other photos don't change the foreground's state");
+    }
+
+    #[test]
+    fn a_preview_is_cut_from_a_decoded_original_and_quiet_lookups_keep_recency() {
+        let mut m = MediaCache::default();
+        let p = Photo::new(PhotoId(1), Source::File { path: "a.arw".into() }, "a.arw", "ARW", 6000, 4000, "2026-01-01");
+        m.insert(PhotoId(1), SourceLevel::Full, Arc::new(Rgb32f::new(6000, 4)));
+        let tick = m.full[0].2;
+        m.quiet = true;
+        match m.source_ref(&p, SourceLevel::Preview) {
+            SourceRef::Fit { max_edge, .. } => assert_eq!(max_edge, SourceLevel::Preview.max_edge()),
+            _ => panic!("the preview is cut from the decoded original"),
+        }
+        assert_eq!(m.full[0].2, tick, "a quiet lookup leaves the original's recency as it was");
+        m.quiet = false;
+        let _ = m.get(PhotoId(1), SourceLevel::Full);
+        assert_ne!(m.full[0].2, tick);
+        m.denoise.set(PhotoId(1), DenoiseSpec { product: "a.lcdn".into(), key: "a".into(), make: None });
+        assert!(!matches!(m.source_ref(&p, SourceLevel::Preview), SourceRef::Fit { .. }), "a denoised twin is not cut away");
+    }
+
+    #[test]
+    fn estimated_bytes_match_the_decoded_cost_and_refuse_unknown_sizes() {
+        let image = Arc::new(Rgb32f::new(30, 20));
+        let plain = DecodedSource::new(image.clone(), None);
+        assert_eq!(DecodedSource::estimated_bytes(30, 20, false), Some(plain.bytes()));
+        let twin = DecodedSource { denoised: Some(Arc::new(Twin::new(image))), ..plain };
+        assert_eq!(DecodedSource::estimated_bytes(30, 20, true), Some(twin.bytes()));
+        assert_eq!(DecodedSource::estimated_bytes(0, 20, false), None);
+        assert_eq!(DecodedSource::estimated_bytes(30, 0, true), None);
+    }
+
+    #[test]
+    fn prefetch_warms_only_beside_known_neighbour_sizes() {
+        let mut s = crate::Session::new();
+        s.media.set_budget(2 << 30);
+        for (id, w, h) in [(1, 6000, 4000), (2, 6000, 4000), (3, 0, 0), (4, 16000, 12000)] {
+            let p = Photo::new(PhotoId(id), Source::File { path: format!("{id}.arw") }, "n.arw", "ARW", w, h, "2026-01-01");
+            s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        }
+        s.selection.active = Some(PhotoId(1));
+        assert_eq!(s.prefetch_job(PhotoId(2), 800, 800, true, true, None).unwrap().level, SourceLevel::Full);
+        assert_eq!(s.prefetch_job(PhotoId(2), 800, 800, true, true, Some(PhotoId(3))).unwrap().level, SourceLevel::Preview, "size not known yet");
+        assert_eq!(
+            s.prefetch_job(PhotoId(2), 800, 800, true, true, Some(PhotoId(4))).unwrap().level,
+            SourceLevel::Preview,
+            "a 192 MP neighbour on the other side does not fit beside it"
+        );
     }
 
     #[test]
