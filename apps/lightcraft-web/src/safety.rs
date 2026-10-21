@@ -206,6 +206,8 @@ pub async fn backup(
         }
         let in_memory = || resident.get(hash).map(|data| std::borrow::Cow::Borrowed(data.as_ref()));
         let data = match &backend {
+            // a resident original holds the stored bytes: no need to read storage again
+            Some(_) if resident.contains_key(hash) => in_memory(),
             Some(b) => match b.read(&storage_key(hash)).await {
                 Ok(data) => data.map(std::borrow::Cow::Owned).or_else(in_memory),
                 Err(error) => {
@@ -252,23 +254,24 @@ pub async fn backup(
 pub fn backup_completed(backup_id: u32, result: Result<BackupReport, String>) {
     let detail = match result {
         Ok(report) => {
-            if report.missing.is_empty() && report.warnings.is_empty() {
-                notice(lightcraft_ui_egui::i18n::tr("Library backup download started. Confirm the ZIP is saved before reloading."));
-            } else {
-                let mut outcome =
-                    lightcraft_ui_egui::i18n::tr("Library backup download started. Confirm the ZIP is saved before reloading.").to_string();
-                for warning in &report.warnings {
-                    outcome.push('\n');
-                    outcome.push_str(warning);
-                }
-                if !report.missing.is_empty() {
-                    outcome.push('\n');
-                    outcome.push_str(lightcraft_ui_egui::i18n::tr("Backup excludes unavailable originals. Keep these source photos separately:"));
-                    outcome.push('\n');
-                    outcome.push_str(&report.missing.join("\n"));
-                }
-                notice(outcome);
+            // the recovery panel words its own outcome; this notice is File ▸ Back Up Library's
+            let n = report.originals;
+            let mut outcome = format!(
+                "Library backed up: {n} original{} ({:.1} MB). Keep the file somewhere safe.",
+                if n == 1 { "" } else { "s" },
+                report.bytes / 1e6
+            );
+            for warning in &report.warnings {
+                outcome.push('\n');
+                outcome.push_str(warning);
             }
+            if !report.missing.is_empty() {
+                outcome.push('\n');
+                outcome.push_str(lightcraft_ui_egui::i18n::tr("Backup excludes unavailable originals. Keep these source photos separately:"));
+                outcome.push('\n');
+                outcome.push_str(&report.missing.join("\n"));
+            }
+            notice(outcome);
             serde_json::json!({"backupId": backup_id, "report": report})
         }
         Err(error) => {

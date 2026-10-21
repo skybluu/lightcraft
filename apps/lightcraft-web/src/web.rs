@@ -174,7 +174,7 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         pick_display_profile: None,
         screen_profile: None,
         backup_library: Some(Box::new(move |session: &mut Session, ui: &UiState, task| {
-            session.end_interaction().map_err(|e| e.to_string())?;
+            // an open interaction stays open: capture_library snapshots its edits as they are
             session.save_view();
             // presets, prefs and view state are copied from storage, so a failing save would leave
             // them stale in the zip (issue #1508)

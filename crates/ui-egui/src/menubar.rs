@@ -1145,6 +1145,40 @@ mod tests {
         assert!(!text.contains("Add Folder") && !text.contains("\"Add Photos"), "no add-folder wording left in the menus");
     }
 
+    /// Back Up / Restore Library are the browser build's (its library lives in browser storage):
+    /// absent from the desktop's menus, present and wired to the host where it provides them.
+    #[test]
+    fn library_backup_items_follow_the_host() {
+        let all = |app: &LightcraftApp| -> Vec<MenuNode> { menu_bar(app).into_iter().flat_map(|(_, v)| v).collect() };
+        let mut desktop = app();
+        assert!(find(&all(&desktop), "file.backupLibrary").is_none() && find(&all(&desktop), "file.restoreLibrary").is_none());
+        assert!(run_item(&mut desktop, "file.backupLibrary", Value::Null).is_err(), "not available without the host");
+        assert!(run_item(&mut desktop, "file.restoreLibrary", Value::Null).is_err(), "not available without the host");
+        let (backups, restores) = (std::rc::Rc::new(std::cell::Cell::new(0)), std::rc::Rc::new(std::cell::Cell::new(0)));
+        let (b, r) = (backups.clone(), restores.clone());
+        let services = crate::Services {
+            backup_library: Some(Box::new(move |s, _, _| {
+                b.set(b.get() + 1);
+                Ok(json!({"photos": s.catalog.len()}))
+            })),
+            restore_library: Some(Box::new(move |_| {
+                r.set(r.get() + 1);
+                Ok(json!({"started": true}))
+            })),
+            ..Default::default()
+        };
+        let mut web = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
+        let bar = all(&web);
+        for id in ["file.backupLibrary", "file.restoreLibrary"] {
+            assert!(matches!(find(&bar, id), Some(MenuNode::Item { enabled: true, .. })), "{id}");
+        }
+        let reply = run_item(&mut web, "file.backupLibrary", Value::Null).unwrap();
+        assert!(reply["photos"].as_u64().unwrap() > 0);
+        assert_eq!((backups.get(), restores.get()), (1, 0), "Back Up runs the backup host only");
+        assert_eq!(run_item(&mut web, "file.restoreLibrary", Value::Null).unwrap()["started"], true);
+        assert_eq!((backups.get(), restores.get()), (1, 1), "Restore runs the restore host only");
+    }
+
     #[test]
     fn bar_follows_the_registry_and_state() {
         let mut app = app();
