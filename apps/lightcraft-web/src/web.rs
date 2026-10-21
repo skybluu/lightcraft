@@ -176,6 +176,11 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         backup_library: Some(Box::new(move |session: &mut Session, ui: &UiState, task| {
             session.end_interaction().map_err(|e| e.to_string())?;
             session.save_view();
+            // presets, prefs and view state are copied from storage, so a failing save would leave
+            // them stale in the zip (issue #1508)
+            if let Some(why) = crate::backup::unsaved_refusal(session.unsaved()) {
+                return Err(why);
+            }
             let files = crate::backup::capture_library(session, ui, &backup_files)?;
             let backup_id = next_backup.get().wrapping_add(1);
             next_backup.set(backup_id);

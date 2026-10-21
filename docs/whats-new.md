@@ -29,8 +29,8 @@
   originals even if other source photos are missing. A warning names the omitted files and the
   ZIP includes `MISSING-ORIGINALS.txt`; keep those source photos separately. The recovery panel
   follows the active UI language, and its backup uses the registered `web.recoveryBackup` command.
-  Backup remains available when browser storage cannot save; it captures pending edits directly
-  into a separate snapshot. Recovery reload waits for its own backup, not an older download.
+  While a save is failing, backup still refuses to start and says why (issue #1508); otherwise it
+  captures the latest edits directly into a separate snapshot. Recovery reload waits for its own backup, not an older download.
   A failed original-list operation no longer blocks saving catalogued or resident photos: the ZIP and
   outcome warn that other stored originals may be omitted. Backup work uses the shared activity stack.
   The recovery dialog keeps keyboard focus inside its controls until the work is protected and reloaded.
