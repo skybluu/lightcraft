@@ -491,6 +491,14 @@ impl MediaCache {
         }
     }
 
+    /// Move the foreground to `id` only while there is one: the view decides whether a photo is
+    /// on screen at all ([`Self::set_on_screen`]), so polling outside Detail doesn't pin it back.
+    pub fn follow_on_screen(&mut self, id: Option<PhotoId>) {
+        if self.on_screen.is_some() {
+            self.set_on_screen(id);
+        }
+    }
+
     /// Bytes held by decoded sources and rendered previews in memory.
     pub fn held(&self) -> usize {
         let (t, p, f) = self.usage();
@@ -1459,6 +1467,11 @@ impl crate::Session {
             job.level
         };
         if level != job.level {
+            // A crop the loupe would draw from the native source looks soft from the preview
+            // level: warm the source, but don't keep that render as the photo's view preview.
+            if matches!((job.level, level), (SourceLevel::Full, SourceLevel::Preview)) {
+                job.view_cache = None;
+            }
             let p = p.clone();
             job.key ^= ((job.level as u64) ^ (level as u64)) << 60;
             job.level = level;
@@ -1602,7 +1615,7 @@ impl crate::Session {
     /// Accept a finished job's loaded source into the cache. What the decode learnt about the file that the catalog
     /// has wrong is corrected too ([`Self::learn_as_shot_wb`]).
     pub fn accept(&mut self, r: &RenderResult) {
-        self.media.set_on_screen(self.active());
+        self.media.follow_on_screen(self.active());
         if let Some(src) = &r.loaded
             && r.source_key.is_none_or(|key| self.catalog.photo(r.photo).is_some_and(|p| Hasher128::new().str(&content_key(p)).finish() == key))
         {
@@ -2020,6 +2033,7 @@ mod tests {
             for edge in [800, 6000] {
                 let job = s.prefetch_job(id, edge, edge, true, warm_full).unwrap();
                 assert_eq!(job.level, SourceLevel::Preview);
+                assert!(job.view_cache.is_none(), "a soft stand-in is never saved as the view preview");
                 assert_eq!((job.request.max_w, job.request.max_h), (edge.min(2560), edge.min(2560)));
                 match job.source {
                     SourceRef::File { max_edge, .. } => assert_eq!(max_edge, SourceLevel::Preview.max_edge()),
@@ -2071,6 +2085,19 @@ mod tests {
         s.accept(&current);
         assert!(s.media.has_source(id, SourceLevel::Full));
         assert_eq!(s.catalog.photo(id).unwrap().as_shot_wb, Some((4986.0, -2.0)), "current decoder facts still teach the catalog");
+    }
+
+    #[test]
+    fn following_the_active_photo_never_pins_one_outside_the_loupe() {
+        let mut m = MediaCache::default();
+        m.follow_on_screen(Some(PhotoId(1)));
+        assert_eq!(m.on_screen, None, "no view put a photo on screen");
+        m.set_on_screen(Some(PhotoId(1)));
+        m.follow_on_screen(Some(PhotoId(2)));
+        assert_eq!(m.on_screen, Some(PhotoId(2)), "the loupe follows the active photo");
+        m.set_on_screen(None);
+        m.follow_on_screen(Some(PhotoId(2)));
+        assert_eq!(m.on_screen, None);
     }
 
     #[test]
