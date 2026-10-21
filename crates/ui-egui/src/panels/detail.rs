@@ -163,7 +163,7 @@ pub(crate) fn snap_fit_rect(rect: Rect, size: [usize; 2], ppp: f32) -> Rect {
 }
 
 /// Keep the viewport inside the photo; axes smaller than the viewport stay centred.
-fn bounded_pan(area: Rect, size: egui::Vec2, pan: (f32, f32)) -> (f32, f32) {
+pub(crate) fn bounded_pan(area: Rect, size: egui::Vec2, pan: (f32, f32)) -> (f32, f32) {
     let bound = |visible: f32, image: f32, centre: f32| {
         let centre = if centre.is_finite() { centre } else { 0.5 };
         if image > visible.max(0.0) {

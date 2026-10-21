@@ -221,7 +221,9 @@ fn photo_tile(
     let mut img = super::detail::fit_rect(img_area, aspect, zoom, native, ppp, app.ui.pan);
     if matches!(app.ui.view, ViewMode::Compare | ViewMode::Reference) {
         if super::detail::navigate_gesture(app, ui, &resp, img_area, img, native) {
-            img = super::detail::fit_rect(img_area, aspect, app.ui.zoom, native, ppp, app.ui.pan);
+            // a scrub or pinch changes the zoom as well as the pan: draw with both
+            zoom = app.ui.zoom;
+            img = super::detail::fit_rect(img_area, aspect, zoom, native, ppp, app.ui.pan);
             // a pinch changes the zoom every frame: no new windows until it is quiet
             app.compare_hold_until = ui.input(|i| i.time) + crate::region::HOLD_SECS;
             ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(crate::region::HOLD_SECS));
@@ -236,10 +238,10 @@ fn photo_tile(
             let point = ((at.x - img.left()) / img.width(), (at.y - img.top()) / img.height());
             let size = super::detail::fit_rect(img_area, aspect, zoom, native, ppp, (0.5, 0.5)).size();
             let offset = img_area.center() - at;
-            app.ui.pan = (point.0 + offset.x / size.x.max(1.0), point.1 + offset.y / size.y.max(1.0));
-            // Pointer zoom keeps this pane's image point under the pointer; keyboard zoom may centre the active AF point.
+            // Pointer zoom keeps this pane's image point under the pointer (as far as the photo's
+            // edges allow); keyboard zoom may centre the active AF point. Panes don't animate.
+            app.ui.pan = super::detail::bounded_pan(img_area, size, (point.0 + offset.x / size.x.max(1.0), point.1 + offset.y / size.y.max(1.0)));
             app.ui.zoom = zoom;
-            app.ui.zoom_anim = true;
             img = super::detail::fit_rect(img_area, aspect, app.ui.zoom, native, ppp, app.ui.pan);
         }
     }
@@ -504,8 +506,9 @@ pub fn show_compare(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         (sel, Rect::from_min_size(area.min, vec2(half, area.height())), "Select", 0u8),
         (cand, Rect::from_min_size(pos2(area.right() - half, area.top()), vec2(half, area.height())), "Candidate", 1u8),
     ];
-    let zoom = app.ui.zoom;
     for (id, r, label, i) in panes {
+        // read per pane: a click or scrub in the first pane changes the linked zoom
+        let zoom = app.ui.zoom;
         let (img, resp) = photo_tile(app, ui, id, Slot::Compare(i), r, label, zoom);
         if i == 1 {
             app.image_rect = Some(img);
@@ -607,11 +610,10 @@ pub fn show_reference(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     };
     let area = canvas.shrink(18.0);
     let half = (area.width() - 16.0) / 2.0;
-    let zoom = app.ui.zoom;
     let left = Rect::from_min_size(area.min, vec2(half, area.height()));
     let right = Rect::from_min_size(pos2(area.right() - half, area.top()), vec2(half, area.height()));
-    let (_, lresp) = photo_tile(app, ui, r, Slot::Compare(0), left, "Reference", zoom);
-    let (img, _) = photo_tile(app, ui, active, Slot::Compare(1), right, "Active", zoom);
+    let (_, lresp) = photo_tile(app, ui, r, Slot::Compare(0), left, "Reference", app.ui.zoom);
+    let (img, _) = photo_tile(app, ui, active, Slot::Compare(1), right, "Active", app.ui.zoom);
     app.image_rect = Some(img);
     lresp.context_menu(|ui| {
         if ui.button(crate::i18n::tr("Clear Reference")).clicked() {
