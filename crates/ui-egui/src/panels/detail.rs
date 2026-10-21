@@ -1579,22 +1579,30 @@ fn general_interaction(
     // click toggles Fit ↔ the chosen click-zoom ratio at the clicked point; drag pans when zoomed
     let zoomed = img.width() > canvas.width() + 1.0 || img.height() > canvas.height() + 1.0;
     if resp.double_clicked() || (resp.clicked() && !zoomed) {
+        let to = if matches!(app.ui.zoom, Zoom::Fit) { Zoom::Percent(app.ui.click_zoom as f32) } else { Zoom::Fit };
         if let Some(q) = resp.interact_pointer_pos() {
             let u = ((q.x - img.left()) / img.width()).clamp(0.0, 1.0);
             let v = ((q.y - img.top()) / img.height()).clamp(0.0, 1.0);
-            app.ui.pan = (u, v);
+            app.ui.pan = if app.ui.tool == "zoom" {
+                // the magnifier keeps the clicked point under the pointer, as in Compare and Reference
+                let size = fit_rect(canvas, aspect, to, native, ui.ctx().pixels_per_point(), (0.5, 0.5)).size();
+                let offset = canvas.center() - q;
+                bounded_pan(canvas, size, (u + offset.x / size.x.max(1.0), v + offset.y / size.y.max(1.0)))
+            } else {
+                (u, v)
+            };
         }
-        app.ui.zoom = if matches!(app.ui.zoom, Zoom::Fit) { Zoom::Percent(app.ui.click_zoom as f32) } else { Zoom::Fit };
+        app.ui.zoom = to;
         app.ui.zoom_anim = true;
     } else if resp.clicked() && zoomed {
         app.ui.zoom = Zoom::Fit;
         app.ui.zoom_anim = true;
     }
-    let primary_pan = resp.dragged_by(egui::PointerButton::Primary) && (app.ui.tool != "zoom" || ui.input(|i| i.key_down(egui::Key::Space)));
-    if zoomed && (primary_pan || resp.dragged_by(egui::PointerButton::Middle)) {
+    // any button pans, as before the magnifier; with it selected the primary button scrubs unless Space is held
+    let magnifier_scrubs = app.ui.tool == "zoom" && !ui.input(|i| i.key_down(egui::Key::Space));
+    if zoomed && resp.dragged() && !(magnifier_scrubs && resp.dragged_by(egui::PointerButton::Primary)) {
         pan_image(app, canvas, img, resp.drag_delta());
     }
-    let _ = (native, aspect);
 }
 
 // ------------------------------------------------------------------------ crop

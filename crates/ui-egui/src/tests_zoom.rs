@@ -606,6 +606,26 @@ fn zoom_button_toggles_the_tool_and_command_preserves_comparison_views() {
     }
 }
 
+// Given the magnifier selected in Detail, a click zooms about the clicked point, as in Compare
+#[test]
+fn detail_magnifier_click_keeps_the_point_under_the_pointer() {
+    use crate::state::Zoom;
+    let mut h = detail();
+    h.app.run("tool.zoom", json!({})).unwrap();
+    h.app.run("view.clickZoom", json!({"ratio": 1})).unwrap();
+    h.app.run("view.zoomFit", json!({})).unwrap();
+    h.settle(SETTLE);
+    let fitted = h.app.image_rect.unwrap();
+    let point = egui::vec2(0.3, 0.4);
+    let at = fitted.min + fitted.size() * point;
+    assert_eq!(h.request("ui.click", json!({"x": at.x, "y": at.y}), T)["ok"], true);
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.zoom, Zoom::Percent(100.0));
+    let zoomed = h.app.image_rect.unwrap();
+    let drift = (zoomed.min + zoomed.size() * point).distance(at);
+    assert!(drift < 0.75, "the clicked point drifted {drift} points");
+}
+
 // Given the magnifier selected and Masking open (which keeps the tool), Space still toggles zoom
 #[test]
 fn space_toggles_zoom_under_an_editing_panel_that_keeps_the_magnifier() {
