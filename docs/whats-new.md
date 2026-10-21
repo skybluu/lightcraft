@@ -24,6 +24,11 @@
   another ratio (4 × 5, 2 × 3…) keeps it portrait, as in Lightroom, and a Custom ratio taller than wide gives a
   portrait crop.
 
+### Browser Assisted Culling yields between photos
+- Browser analysis now advances one photo per frame instead of blocking the page for the full selection.
+  Progress and Cancel remain available between source reads. Cancellation applies no partial scores or flags,
+  and a completed run remains one undo step. Native analysis continues on its worker thread.
+
 ## 2026-10-15
 
 ### Constrain Crop tightens the crop you see
