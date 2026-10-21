@@ -1723,6 +1723,12 @@ impl crate::Session {
     pub fn accept(&mut self, r: &RenderResult) {
         // The engine alone (headless, tests) has no view: the active photo is the foreground.
         self.media.set_on_screen(self.active());
+        self.accept_shown(r);
+    }
+
+    /// [`Self::accept`] for a UI that sets the foreground from its view: a late completion
+    /// outside the loupe must not pin the active photo and evict what the view still uses.
+    pub fn accept_shown(&mut self, r: &RenderResult) {
         if let Some(src) = &r.loaded
             && r.source_key.is_none_or(|key| self.catalog.photo(r.photo).is_some_and(|p| Hasher128::new().str(&content_key(p)).finish() == key))
         {

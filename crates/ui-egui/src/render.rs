@@ -796,10 +796,10 @@ impl Renderer {
                 if !newer_draft {
                     continue;
                 }
-                session.accept(&r);
+                session.accept_shown(&r);
             } else {
                 self.request_ids.remove(&slot);
-                session.accept(&r);
+                session.accept_shown(&r);
             }
             if slot.is_view() {
                 self.shown_ids.insert(slot, r.request_id);
