@@ -2194,7 +2194,11 @@ mod tests {
         s.media.set_budget(2 << 30);
         assert_eq!(s.prefetch_job(id, 800, 800, true, true, None).unwrap().level, SourceLevel::Full);
         s.media.denoise.set(id, DenoiseSpec { product: "cropped.lcdn".into(), key: "twin".into(), make: None });
-        assert_eq!(s.prefetch_job(id, 800, 800, true, true, None).unwrap().level, SourceLevel::Preview, "native estimates reserve the twin and lazy mix");
+        assert_eq!(
+            s.prefetch_job(id, 800, 800, true, true, None).unwrap().level,
+            SourceLevel::Preview,
+            "native estimates reserve the twin and lazy mix"
+        );
     }
 
     #[test]
