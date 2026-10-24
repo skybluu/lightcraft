@@ -1580,10 +1580,7 @@ mod tests {
     fn a_refused_backup_from_the_menu_shows_why() {
         // a host that refuses to start a backup: its reason reaches the user (issue #1508)
         let refusal = "Backup not started: 1 change could not be saved to browser storage yet";
-        let services = crate::Services {
-            backup_library: Some(Box::new(move |_, _, _| Err(refusal.to_string()))),
-            ..Default::default()
-        };
+        let services = crate::Services { backup_library: Some(Box::new(move |_, _, _| Err(refusal.to_string()))), ..Default::default() };
         let app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
         let mut h = crate::headless::Headless::new(app, [1400.0, 900.0], 1.0);
         let t = std::time::Duration::from_secs(30);
