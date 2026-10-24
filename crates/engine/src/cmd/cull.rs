@@ -72,8 +72,9 @@ pub struct CullResult {
     pick_best: bool,
     gap: f64,
     same: f32,
-    /// Each measured photo, with what a fresh decode read about its file (the as-shot white).
-    rows: Vec<(PhotoId, MeasurementKey, Measurement, Option<lightcraft_pipeline::SourceInfo>)>,
+    /// Each measured photo, with what a fresh decode read about its file (the as-shot white) and
+    /// whether it came from a smart preview standing in for an offline original.
+    rows: Vec<(PhotoId, MeasurementKey, Measurement, Option<lightcraft_pipeline::SourceInfo>, bool)>,
     failed: Vec<Value>,
     cancelled: bool,
 }
@@ -191,19 +192,19 @@ impl CullRun {
             p.detail(&photo.name);
         }
         let measured = match photo.cached {
-            Some(cached) => Ok((cached, None)),
+            Some(cached) => Ok((cached, None, false)),
             // a malformed file that panics the decoder fails this photo, not the whole run
             None => crate::guard::catch(&format!("analyzing {}", photo.name), || -> std::result::Result<_, String> {
                 let source = photo.source.as_ref().ok_or_else(|| "missing analysis source".to_string())?.load_source()?;
                 use lightcraft_pipeline::cull;
                 let image = &source.image;
                 let m = Measurement { sharpness: cull::sharpness(image), clipped: cull::clipped(image), signature: cull::signature(image) };
-                Ok((m, source.info))
+                Ok((m, source.info, source.from_proxy))
             })
             .and_then(|r| r),
         };
         match measured {
-            Ok((measurement, info)) => result.rows.push((photo.id, photo.key, measurement, info)),
+            Ok((measurement, info, from_proxy)) => result.rows.push((photo.id, photo.key, measurement, info, from_proxy)),
             Err(e) => result.failed.push(json!([photo.id.0, e])),
         }
         if let Some(p) = progress {
@@ -224,7 +225,7 @@ impl CullResult {
         }
         let mut rows = Vec::with_capacity(self.rows.len());
         let mut failed = self.failed;
-        for (id, key, measurement, info) in self.rows {
+        for (id, key, measurement, info, from_proxy) in self.rows {
             let Some(photo) = s.catalog.photo(id).filter(|p| {
                 !p.deleted
                     && p.source == key.source
@@ -239,8 +240,11 @@ impl CullResult {
             if let Some(info) = &info {
                 s.learn_as_shot_wb(id, info);
             }
-            s.signatures.insert(key.content.clone(), measurement.signature);
-            s.cull_measurements.insert(id, (key, Scores { sharpness: measurement.sharpness, clipped: measurement.clipped }));
+            // a smart preview's numbers serve this run only: once the original is back it is measured
+            if !from_proxy {
+                s.signatures.insert(key.content.clone(), measurement.signature);
+                s.cull_measurements.insert(id, (key, Scores { sharpness: measurement.sharpness, clipped: measurement.clipped }));
+            }
             rows.push((id, time, measurement.sharpness, measurement.clipped, measurement.signature));
         }
         finish(s, rows, failed, self.reject_below, self.pick_best, (self.gap, self.same))
